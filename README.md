@@ -8,7 +8,7 @@ This is an **unofficial** client, not affiliated with Google. It calls the same 
 
 The official Photos Library API has not been able to read your library or shared albums since March 2025.
 
-Use at your own risk. Automating Photos may violate Google’s terms and can lead to account limits.
+Use at your own risk. Google’s [Terms of Service](https://policies.google.com/terms) forbid using automated means to access content in violation of machine-readable instructions such as [photos.google.com/robots.txt](https://photos.google.com/robots.txt) (which disallows `/albums`, `/photo/`, `/shared`, and similar paths). Google may suspend or terminate an account for a material or repeated breach; see [why accounts are disabled](https://support.google.com/accounts/answer/40695).
 
 ## Features
 

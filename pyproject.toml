@@ -1,0 +1,60 @@
+[build-system]
+requires = ["hatchling>=1.25,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "google-photos-sync"
+version = "0.1.0"
+description = "Download Google Photos albums (including shared) in original quality"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "google-photos-sync contributors" }]
+keywords = ["google-photos", "backup", "download", "albums"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Graphics",
+    "Environment :: Console",
+]
+# Pinned so installs do not float to a new release without a deliberate bump.
+dependencies = [
+    "playwright==1.62.0",
+    "requests==2.34.2",
+    "tqdm==4.70.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9"]
+
+[project.scripts]
+gpsync = "gpsync.cli:main"
+
+[tool.hatch.build]
+exclude = [
+    "/gpsync-data",
+    "/.venv",
+    "/photos",
+    "/downloads",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["gpsync"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "/gpsync-data",
+    "/.venv",
+    "/photos",
+    "/downloads",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"

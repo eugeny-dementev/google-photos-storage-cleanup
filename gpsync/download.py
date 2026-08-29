@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import random
 import shutil
 import tempfile
 import threading
+import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -38,6 +40,24 @@ class DownloadOptions:
     min_size: int | None = None
     max_size: int | None = None
     date_prefix: bool = False
+    pause_min: float | None = None
+    pause_max: float | None = None
+
+
+_start_lock = threading.Lock()
+_next_start = 0.0
+
+
+def _wait_download_slot(options: DownloadOptions) -> None:
+    if options.pause_min is None or options.pause_max is None:
+        return
+    delay = random.uniform(options.pause_min, options.pause_max)
+    global _next_start
+    with _start_lock:
+        wait = _next_start - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+        _next_start = time.monotonic() + delay
 
 
 def download_pending(
@@ -51,10 +71,20 @@ def download_pending(
     min_size: int | None = None,
     max_size: int | None = None,
     date_prefix: bool = False,
+    pause: tuple[float, float] | None = None,
 ) -> None:
     settings.ensure_dirs()
     workers = max(1, workers or settings.workers)
-    options = DownloadOptions(min_size=min_size, max_size=max_size, date_prefix=date_prefix)
+    global _next_start
+    with _start_lock:
+        _next_start = 0.0
+    options = DownloadOptions(
+        min_size=min_size,
+        max_size=max_size,
+        date_prefix=date_prefix,
+        pause_min=None if pause is None else pause[0],
+        pause_max=None if pause is None else pause[1],
+    )
     with Database(settings.db_path) as db:
         if album_key is None and album_filter:
             matches = db.find_albums(album_filter)
@@ -81,6 +111,9 @@ def download_pending(
             extra.append(f"min {format_bytes(min_size)}")
         if max_size is not None:
             extra.append(f"max {format_bytes(max_size)}")
+        if pause is not None:
+            low, high = pause
+            extra.append(f"pause {low:g}-{high:g}s" if low != high else f"pause {low:g}s")
         suffix = f" ({', '.join(extra)})" if extra else ""
         print(f"Downloading {total} item(s) with {workers} worker(s){suffix}")
 
@@ -132,6 +165,7 @@ def _thread_resources(settings: Settings) -> tuple[PhotosClient, Database]:
 
 
 def _download_one(settings: Settings, row: dict, options: DownloadOptions) -> None:
+    _wait_download_slot(options)
     client, db = _thread_resources(settings)
     item_id = row["id"]
     taken = capture_datetime(row["taken_ts"], row["timezone_offset"])

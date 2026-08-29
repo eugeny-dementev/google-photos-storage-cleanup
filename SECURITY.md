@@ -4,10 +4,10 @@
 
 `gpsync-data/` is local-only and listed in `.gitignore`. It can contain:
 
-- `cookies.txt` — Google session cookies
-- `browser-profile/` — Chromium profile from `gpsync login`
-- `photos.db` — album/media inventory (not the photos themselves)
-- `config.json` — output path and settings
+- `cookies.txt` - Google session cookies
+- `browser-profile/` - Chromium profile from `gpsync login`
+- `photos.db` - album/media inventory (not the photos themselves)
+- `config.json` - output path and settings
 
 Do not commit, zip, or share that directory. After `gpsync login` / cookie import the files are created with owner-only permissions where the OS allows it.
 
@@ -27,9 +27,9 @@ Direct runtime dependencies (pinned in `pyproject.toml`):
 
 `pip install` will still pull **transitive** packages those three declare (for example `urllib3`, `certifi`, `greenlet`). Those are not listed in this repo; they come from PyPI at install time.
 
-`playwright install chromium` downloads a Chromium build from Microsoft’s distribution, not from this repository.
+`playwright install chromium` downloads a Chromium build from Microsoft's distribution, not from this repository.
 
-This project does **not** pip-install xob0t’s repositories. RPC offsets were reimplemented here (MIT). Their license is in `third_party/xob0t-LICENSE`.
+This project does **not** pip-install xob0t's repositories. RPC offsets were reimplemented here (MIT). Their license is in `third_party/xob0t-LICENSE`.
 
 The optional Chrome extension mentioned in the README is not bundled. Prefer `gpsync login` if you do not want third-party browser extensions.
 

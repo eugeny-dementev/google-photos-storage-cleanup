@@ -7,6 +7,7 @@ from gpsync.util import (
     capture_datetime,
     filename_from_content_disposition,
     format_bytes,
+    parse_pause,
     parse_size,
     parse_wiz_global_data,
     sanitize_filename,
@@ -116,6 +117,8 @@ def test_parse_size_and_format_bytes() -> None:
     assert size_allowed(100, min_size=50, max_size=None) is True
     assert size_allowed(10, min_size=None, max_size=50) is True
     assert size_allowed(None, min_size=50, max_size=50) is True
+    assert parse_pause("3") == (3.0, 3.0)
+    assert parse_pause("1-5") == (1.0, 5.0)
 
 
 def test_date_prefixes_use_capture_time() -> None:

@@ -107,6 +107,28 @@ def parse_size(value: str) -> int:
     return int(number * multipliers[unit])
 
 
+def parse_pause(value: str) -> tuple[float, float]:
+    """Parse 3 or 1-5 into (min_seconds, max_seconds)."""
+    raw = (value or "").strip()
+    if not raw:
+        raise ValueError("Pause cannot be empty. Examples: 3, 1-5")
+    if "-" in raw:
+        left, right = raw.split("-", 1)
+        try:
+            low = float(left.strip())
+            high = float(right.strip())
+        except ValueError as exc:
+            raise ValueError(f"Invalid pause {value!r}. Examples: 3, 1-5") from exc
+    else:
+        try:
+            low = high = float(raw)
+        except ValueError as exc:
+            raise ValueError(f"Invalid pause {value!r}. Examples: 3, 1-5") from exc
+    if low < 0 or high < 0 or low > high:
+        raise ValueError(f"Invalid pause {value!r}. Use 0 or more, and min <= max.")
+    return low, high
+
+
 def format_bytes(size: int | float | None) -> str:
     if size is None:
         return "?"

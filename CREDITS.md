@@ -4,7 +4,7 @@ This file is the human-readable attribution for third-party work and for what is
 
 ## Protocol (not a library)
 
-The official Google Photos Library API (since March 2025) cannot list a user’s library or shared albums. This project does **not** use that API.
+The official Google Photos Library API (since March 2025) cannot list a user's library or shared albums. This project does **not** use that API.
 
 Instead it calls the same undocumented `PhotosUi` `batchexecute` RPCs that [photos.google.com](https://photos.google.com/) uses when you scroll the library and open albums (`/_/PhotosUi/data/batchexecute`). Session cookies from a real Google login are required. Google can change these RPCs without notice.
 
@@ -14,8 +14,8 @@ RPC ids used here include `Z5xsfc` (albums), `F2A0H` (shared links), `snAcKc` (a
 
 Request shapes and nested-JSON field offsets for those RPCs are derived from:
 
-- [xob0t/Google-Photos-Toolkit](https://github.com/xob0t/Google-Photos-Toolkit) — TypeScript userscript / toolkit that maps Photos web RPCs and parsers
-- [xob0t/google_photos_web_client](https://github.com/xob0t/google_photos_web_client) — Python client for the same `batchexecute` protocol (cookies, `WIZ_global_data`, payload layout)
+- [xob0t/Google-Photos-Toolkit](https://github.com/xob0t/Google-Photos-Toolkit) - TypeScript userscript / toolkit that maps Photos web RPCs and parsers
+- [xob0t/google_photos_web_client](https://github.com/xob0t/google_photos_web_client) - Python client for the same `batchexecute` protocol (cookies, `WIZ_global_data`, payload layout)
 
 Copyright (c) 2024 xob0t, MIT License.
 
@@ -39,14 +39,14 @@ The standard library is used for SQLite, `argparse`, `pathlib`, and `http.cookie
 
 ## Tools mentioned in the docs (not dependencies)
 
-[Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc) is an optional Chrome extension for the “import cookies” login path. It is not bundled or required if you use `gpsync login` with Playwright.
+[Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc) is an optional Chrome extension for the "import cookies" login path. It is not bundled or required if you use `gpsync login` with Playwright.
 
 ## Looked at, not used
 
 These were reviewed while choosing an approach and are **not** sources of this codebase:
 
-- Official Photos Library API — insufficient for library + shared albums after the 2025 restriction
-- [gabrielgrijincu/let-my-photos-go](https://github.com/gabrielgrijincu/let-my-photos-go) and similar Playwright “scroll the grid” exporters — architecture here is direct RPCs, not DOM scraping
+- Official Photos Library API - insufficient for library + shared albums after the 2025 restriction
+- [gabrielgrijincu/let-my-photos-go](https://github.com/gabrielgrijincu/let-my-photos-go) and similar Playwright "scroll the grid" exporters - architecture here is direct RPCs, not DOM scraping
 - Google Takeout, rclone, and older `gphotos-sync`-style tools that relied on the official API
 
 ## Original to this project

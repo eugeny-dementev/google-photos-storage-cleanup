@@ -1,6 +1,6 @@
 # Google Photos Sync
 
-**English:** this file · **Русский:** [README-ru.md](README-ru.md)
+**English:** this file | **Русский:** [README-ru.md](README-ru.md)
 
 Download **Google Photos albums** (including albums shared with you) at original quality. Python, local SQLite, browser-cookie login. Runs on **Linux**, Windows, and macOS.
 
@@ -8,16 +8,16 @@ This is an **unofficial** client, not affiliated with Google. It calls the same 
 
 The official Photos Library API has not been able to read your library or shared albums since March 2025.
 
-Use at your own risk. Google’s [Terms of Service](https://policies.google.com/terms) forbid using automated means to access content in violation of machine-readable instructions such as [photos.google.com/robots.txt](https://photos.google.com/robots.txt) (which disallows `/albums`, `/photo/`, `/shared`, and similar paths). Google may suspend or terminate an account for a material or repeated breach; see [why accounts are disabled](https://support.google.com/accounts/answer/40695).
+Use at your own risk. Google's [Terms of Service](https://policies.google.com/terms) forbid using automated means to access content in violation of machine-readable instructions such as [photos.google.com/robots.txt](https://photos.google.com/robots.txt) (which disallows `/albums`, `/photo/`, `/shared`, and similar paths). Google may suspend or terminate an account for a material or repeated breach; see [why accounts are disabled](https://support.google.com/accounts/answer/40695).
 
 ## Features
 
 - Every album, including shared ones. The same photo in two albums is saved **twice** (the second copy is taken from disk, not downloaded again).
 - Photos and videos, including items you do not own.
-- Original files: the web UI “Download original” URL (Shift+D), not an API transcode.
+- Original files: the web UI "Download original" URL (Shift+D), not an API transcode.
 - Original filename (Google metadata or `Content-Disposition`).
 - File date = capture time from Google Photos (mtime; on Windows, creation time as well).
-- SQLite statuses `pending` / `downloaded` / `failed` — stop and resume large libraries.
+- SQLite statuses `pending` / `downloaded` / `failed` - stop and resume large libraries.
 
 ## Install
 
@@ -78,11 +78,11 @@ On disk:
       photo_from_friend.jpg
 ```
 
-State lives in `./gpsync-data/` (`cookies.txt`, `photos.db`, `config.json`, Chromium profile). That directory is gitignored — it holds your Google session.
+State lives in `./gpsync-data/` (`cookies.txt`, `photos.db`, `config.json`, Chromium profile). That directory is gitignored - it holds your Google session.
 
 ## Sign in
 
-### Option 1 — Chromium window (preferred)
+### Option 1 - Chromium window (preferred)
 
 Needs a graphical session. On SSH without X11/Wayland or a headless server, use option 2.
 
@@ -99,15 +99,15 @@ gpsync login
 gpsync download --failed-only
 ```
 
-### Option 2 — cookies.txt from your browser
+### Option 2 - cookies.txt from your browser
 
 Prefer option 1. A browser extension is third-party code this repo does not ship or audit.
 
 1. [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc).
-2. Allow it in Incognito (`chrome://extensions` → extension details).
+2. Allow it in Incognito (`chrome://extensions` -> extension details).
 3. Open a **new Incognito window**, sign in to Google, open [photos.google.com](https://photos.google.com/).
 4. Open a blank tab, **close the Photos tab**.
-5. Export All Cookies → save `cookies.txt`.
+5. Export All Cookies -> save `cookies.txt`.
 6. Close Incognito so that session is not also live in the browser (Google invalidates it faster otherwise).
 
 ```bash
@@ -151,7 +151,9 @@ gpsync logout
 | `gpsync download --min-size 50M` | Files at least 50MiB |
 | `gpsync download --folder 10` | Album number from `gpsync status` (asks Y/N) |
 | `gpsync download -y --folder 10` | Same, no prompt |
-| `gpsync download --date-prefix` | Prefix albums `YYYY.MM.DD …` and files `YYYY.MM.DD HH.MM …` (capture time) |
+| `gpsync download --date-prefix` | Prefix albums `YYYY.MM.DD ...` and files `YYYY.MM.DD HH.MM ...` (capture time) |
+| `gpsync download --pause 3` | Wait 3 seconds between starting each file |
+| `gpsync download --pause 1-5` | Random wait 1-5 seconds between file starts |
 | `gpsync status` | Album table: `#`, name, shared, done/total, failures, last enumerate |
 | `gpsync verify --reset` | Missing files on disk become `pending` again |
 
@@ -162,6 +164,8 @@ Defaults: `--data-dir gpsync-data`, `--output-dir photos`.
 `--date-prefix` is off unless you pass the flag. File times use `HH.MM`, not `HH:MM` (`:` is illegal in Windows names). The album date is the earliest capture in that album.
 
 `--min-size` / `--max-size` accept `50M`, `100KB`, `1.5G` (1024-based). Files that do not match stay `pending` so you can download the other bucket later.
+
+`--pause` spaces out when each file starts. With `--workers` greater than 1, transfers can still overlap; use `--workers 1 --pause 1-5` for a gap after each file finishes before the next starts.
 
 ## How it works
 
@@ -176,13 +180,13 @@ This protocol is undocumented. Google can change RPCs without notice. Default pa
 - Locked Folder (PIN) is not exported.
 - Partner sharing with no album of its own is only included if the photo is already in Library: `gpsync enumerate --library`.
 - RPC names and payload shapes can break after a Photos UI update.
-- Very large videos take longer; a dropped transfer is marked `failed` — retry with `--failed-only`.
+- Very large videos take longer; a dropped transfer is marked `failed` - retry with `--failed-only`.
 
 ## Security and dependencies
 
 Cookies and the Chromium profile stay in `gpsync-data/` (gitignored). See [SECURITY.md](SECURITY.md).
 
-Runtime dependencies are three PyPI packages with **pinned versions** in `pyproject.toml`. xob0t’s code is **not** installed via pip; only the MIT-licensed RPC field map was reimplemented here.
+Runtime dependencies are three PyPI packages with **pinned versions** in `pyproject.toml`. xob0t's code is **not** installed via pip; only the MIT-licensed RPC field map was reimplemented here.
 
 ## Development
 

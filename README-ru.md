@@ -1,6 +1,6 @@
 # Google Photos Sync
 
-**English:** [README.md](README.md) · **Русский:** этот файл
+**English:** [README.md](README.md) | **Русский:** этот файл
 
 Выгрузка **альбомов Google Photos** (включая те, что шарили с вами) в оригинальном качестве. Python, локальный SQLite, вход через cookies браузера. Работает на **Linux**, Windows и macOS.
 
@@ -12,10 +12,10 @@
 
 - Все альбомы, в том числе shared. Одна и та же фотография в двух альбомах сохраняется **дважды** (во второй раз копируется с диска, без повторной загрузки).
 - Фото и видео, в том числе те, где вы не владелец.
-- Оригинал: URL «Download original» из веб-UI (аналог Shift+D), не транскод API.
+- Оригинал: URL "Download original" из веб-UI (аналог Shift+D), не транскод API.
 - Имя файла как у оригинала (из метаданных Google или `Content-Disposition`).
 - Дата файла = дата съёмки из Google Photos (mtime; на Windows ещё и creation time).
-- SQLite со статусами `pending` / `downloaded` / `failed` — можно останавливать и продолжать большие альбомы.
+- SQLite со статусами `pending` / `downloaded` / `failed` - можно останавливать и продолжать большие альбомы.
 
 ## Установка
 
@@ -76,11 +76,11 @@ gpsync download                    # всё оставшееся
       photo_from_friend.jpg
 ```
 
-Состояние лежит в `./gpsync-data/` (`cookies.txt`, `photos.db`, `config.json`, профиль Chromium). Этот каталог в git не коммитится — там сессия Google.
+Состояние лежит в `./gpsync-data/` (`cookies.txt`, `photos.db`, `config.json`, профиль Chromium). Этот каталог в git не коммитится - там сессия Google.
 
 ## Вход
 
-### Вариант 1 — окно Chromium (проще)
+### Вариант 1 - окно Chromium (проще)
 
 Нужна графическая сессия (обычный рабочий стол). По SSH без X11/Wayland и на headless-сервере используйте вариант 2.
 
@@ -97,16 +97,16 @@ gpsync login
 gpsync download --failed-only
 ```
 
-### Вариант 2 — cookies.txt из вашего браузера
+### Вариант 2 - cookies.txt из вашего браузера
 
-Предпочтительнее вариант 1: расширение браузера — чужой код, этот репозиторий его не поставляет и не проверяет.
+Предпочтительнее вариант 1: расширение браузера - чужой код, этот репозиторий его не поставляет и не проверяет.
 
 1. Расширение [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc).
-2. Расширению нужна работа в режиме инкогнито (Chrome: `chrome://extensions` → детали расширения → «Разрешить в режиме инкогнито»).
+2. Расширению нужна работа в режиме инкогнито (Chrome: `chrome://extensions` -> детали расширения -> "Разрешить в режиме инкогнито").
 3. Откройте **новое окно инкогнито**, войдите в Google, откройте [photos.google.com](https://photos.google.com/).
 4. Откройте пустую вкладку, **закройте вкладку Photos**.
-5. Export All Cookies → сохраните `cookies.txt`.
-6. Закройте инкогнито (чтобы эта сессия больше не была открыта в браузере — иначе Google быстрее её инвалидирует).
+5. Export All Cookies -> сохраните `cookies.txt`.
+6. Закройте инкогнито (чтобы эта сессия больше не была открыта в браузере - иначе Google быстрее её инвалидирует).
 
 ```bash
 gpsync login --cookies ~/Downloads/cookies.txt
@@ -121,7 +121,7 @@ gpsync whoami
 gpsync --account-index 1 whoami
 ```
 
-`cookies.txt` — это пароль. Не коммитьте его и не шарьте. Сбросить сессию, не трогая базу и скачанные файлы:
+`cookies.txt` - это пароль. Не коммитьте его и не шарьте. Сбросить сессию, не трогая базу и скачанные файлы:
 
 ```bash
 gpsync logout
@@ -149,17 +149,21 @@ gpsync logout
 | `gpsync download --min-size 50M` | Только файлы не меньше 50MiB |
 | `gpsync download --folder 10` | Альбом с таким номером в `gpsync status` (спросит Y/N) |
 | `gpsync download -y --folder 10` | То же без вопроса |
-| `gpsync download --date-prefix` | Имена: папка `YYYY.MM.DD …`, файл `YYYY.MM.DD HH.MM …` (по времени съёмки) |
+| `gpsync download --date-prefix` | Имена: папка `YYYY.MM.DD ...`, файл `YYYY.MM.DD HH.MM ...` (по времени съёмки) |
+| `gpsync download --pause 3` | Пауза 3 секунды между стартом каждого файла |
+| `gpsync download --pause 1-5` | Случайная пауза 1-5 секунд между стартами |
 | `gpsync status` | Таблица альбомов: `#`, имя, shared, скачано/всего, ошибки, дата enumerate |
 | `gpsync verify --reset` | Пропавшие с диска файлы снова станут `pending` |
 
 Пути по умолчанию: `--data-dir gpsync-data`, `--output-dir photos`.
 
-`gpsync status` рисует таблицу. Колонка `#` — номер для `gpsync download --folder N`. Имена альбомов в кавычках, `done/total` — скачано / всего в базе, `scanned` — время последнего `enumerate`.
+`gpsync status` рисует таблицу. Колонка `#` - номер для `gpsync download --folder N`. Имена альбомов в кавычках, `done/total` - скачано / всего в базе, `scanned` - время последнего `enumerate`.
 
-`--date-prefix` по умолчанию выключен. Для файлов время идёт как `HH.MM`, а не `HH:MM`: двоеточие нельзя в имени файла на Windows. Дата папки — съёмка самого раннего файла в альбоме.
+`--date-prefix` по умолчанию выключен. Для файлов время идёт как `HH.MM`, а не `HH:MM`: двоеточие нельзя в имени файла на Windows. Дата папки - съёмка самого раннего файла в альбоме.
 
-`--min-size` / `--max-size` понимают `50M`, `100KB`, `1.5G` (1024). Файлы, которые не подошли, остаются `pending` — их можно выгрузить другим фильтром.
+`--min-size` / `--max-size` понимают `50M`, `100KB`, `1.5G` (1024). Файлы, которые не подошли, остаются `pending` - их можно выгрузить другим фильтром.
+
+`--pause` разносит момент старта каждого файла. Если `--workers` больше 1, загрузки всё ещё могут идти параллельно; для паузы после каждого файла: `--workers 1 --pause 1-5`.
 
 ## Как это устроено
 
@@ -172,7 +176,7 @@ gpsync logout
 ## Ограничения
 
 - Locked Folder (PIN) не выгружается.
-- Partner sharing («с партнёром») без отдельного альбома — только если фото уже в Library: `gpsync enumerate --library`.
+- Partner sharing ("с партнёром") без отдельного альбома - только если фото уже в Library: `gpsync enumerate --library`.
 - Имена RPC и формат ответов могут сломаться после обновления Photos.
 - Очень большие видео качаются дольше; при обрыве файл помечается `failed`, повторите `--failed-only`.
 
@@ -180,7 +184,7 @@ gpsync logout
 
 Cookies и профиль Chromium живут только в `gpsync-data/` (в `.gitignore`). Подробности: [SECURITY.md](SECURITY.md).
 
-Прямые зависимости — три пакета с PyPI с **закреплёнными версиями** в `pyproject.toml`. Код xob0t **не ставится** через pip; используются только перенесённые RPC-оффсеты (MIT).
+Прямые зависимости - три пакета с PyPI с **закреплёнными версиями** в `pyproject.toml`. Код xob0t **не ставится** через pip; используются только перенесённые RPC-оффсеты (MIT).
 
 ## Разработка
 
@@ -189,4 +193,4 @@ pip install -e ".[dev]"
 pytest
 ```
 
-Сторонние наработки — [CREDITS.md](CREDITS.md). Лицензия — [LICENSE](LICENSE). Upstream MIT xob0t — [third_party/xob0t-LICENSE](third_party/xob0t-LICENSE).
+Сторонние наработки - [CREDITS.md](CREDITS.md). Лицензия - [LICENSE](LICENSE). Upstream MIT xob0t - [third_party/xob0t-LICENSE](third_party/xob0t-LICENSE).

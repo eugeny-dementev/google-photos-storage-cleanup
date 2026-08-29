@@ -9,12 +9,19 @@ from gpsync.config import load_settings
 from gpsync.db import Database
 from gpsync.download import download_pending
 from gpsync.enumerate import enumerate_all
-from gpsync.util import parse_size
+from gpsync.util import parse_pause, parse_size
 
 
 def _arg_size(value: str) -> int:
     try:
         return parse_size(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
+def _arg_pause(value: str) -> tuple[float, float]:
+    try:
+        return parse_pause(value)
     except ValueError as exc:
         raise argparse.ArgumentTypeError(str(exc)) from exc
 
@@ -67,6 +74,12 @@ def main(argv: list[str] | None = None) -> int:
         "--date-prefix",
         action="store_true",
         help="Prefix albums with YYYY.MM.DD and files with YYYY.MM.DD HH.MM (capture time)",
+    )
+    dl.add_argument(
+        "--pause",
+        type=_arg_pause,
+        metavar="SEC",
+        help="Wait between starting each file, e.g. 3 or 1-5 (seconds). Use --workers 1 to avoid overlap.",
     )
 
     sub.add_parser("status", help="Show SQLite progress")
@@ -136,6 +149,7 @@ def main(argv: list[str] | None = None) -> int:
                 min_size=min_size,
                 max_size=max_size,
                 date_prefix=args.date_prefix,
+                pause=args.pause,
             )
             _print_status(settings)
             return 0

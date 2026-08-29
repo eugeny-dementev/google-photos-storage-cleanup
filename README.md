@@ -150,22 +150,42 @@ gpsync logout
 | `gpsync download --max-size 50M` | Files at most 50MiB |
 | `gpsync download --min-size 50M` | Files at least 50MiB |
 | `gpsync download --folder 10` | Album number from `gpsync status` (asks Y/N) |
+| `gpsync download --folder 1,4-6,10` | Several albums: commas, `N-M` ranges, no spaces, max 10 |
 | `gpsync download -y --folder 10` | Same, no prompt |
 | `gpsync download --date-prefix` | Prefix albums `YYYY.MM.DD ...` and files `YYYY.MM.DD HH.MM ...` (capture time) |
 | `gpsync download --pause 3` | Wait 3 seconds between starting each file |
 | `gpsync download --pause 1-5` | Random wait 1-5 seconds between file starts |
+| `gpsync download --fix-time` | Set capture dates on already downloaded files (no HTTP) |
+| `gpsync download --fix-time --folder 1,4` | Same, only those albums |
 | `gpsync status` | Album table: `#`, name, shared, done/total, failures, last enumerate |
 | `gpsync verify --reset` | Missing files on disk become `pending` again |
 
 Defaults: `--data-dir gpsync-data`, `--output-dir photos`.
 
-`gpsync status` prints a table. Column `#` is the index for `--folder N`. Album names are quoted. `done/total` is downloaded / rows in the database. `scanned` is the last enumerate time.
+`gpsync status` prints a table. Column `#` is the index for `--folder`. Use `1,4,9` or `2-5` or `1,4-6,10` (no spaces). At most 10 albums after ranges are expanded. Album names are quoted. `done/total` is downloaded / rows in the database. `scanned` is the last enumerate time.
 
 `--date-prefix` is off unless you pass the flag. File times use `HH.MM`, not `HH:MM` (`:` is illegal in Windows names). The album date is the earliest capture in that album.
 
 `--min-size` / `--max-size` accept `50M`, `100KB`, `1.5G` (1024-based). Files that do not match stay `pending` so you can download the other bucket later.
 
 `--pause` spaces out when each file starts. With `--workers` greater than 1, transfers can still overlap; use `--workers 1 --pause 1-5` for a gap after each file finishes before the next starts.
+
+`--fix-time` does not download. It walks `downloaded` rows in SQLite and sets each file's mtime (and Windows creation time) to the capture date from enumerate. It uses the stored `local_path` (and Live Photo companion path), so names from `--date-prefix` are found. `--folder` / `--album` limit which albums; `--pause`, `--workers`, size filters, and `--date-prefix` are ignored.
+
+**Ctrl+C** stops `gpsync download` and `gpsync enumerate`. Files already written and SQLite are kept; in-progress transfers are dropped and stay `pending`. Run the same command again to resume.
+
+During `gpsync download`, each album line may show worker letters on the right:
+
+| Letter | Meaning |
+|---|---|
+| `d` | HTTP download |
+| `s` | waiting (`--pause`) |
+| `i` | fetching item metadata |
+| `c` | copy from disk (same file already in another album) |
+| `z` | unpacking a zip from Google |
+| `!` | error |
+
+When the album is finished the letters are replaced with `done`.
 
 ## How it works
 

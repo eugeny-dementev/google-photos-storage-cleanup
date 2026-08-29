@@ -129,6 +129,47 @@ def parse_pause(value: str) -> tuple[float, float]:
     return low, high
 
 
+FOLDER_SPEC_MAX = 10
+
+
+def parse_folder_spec(value: str) -> list[int]:
+    """Parse --folder 1,4-6,10 into sorted unique 1-based indexes. No spaces."""
+    if not value:
+        raise ValueError("Empty --folder. Examples: 3, 1,4,9, 2-5, 1,4-6,10")
+    if any(ch.isspace() for ch in value):
+        raise ValueError("Do not use spaces in --folder (example: 1,4-6,10)")
+    seen: set[int] = set()
+    numbers: list[int] = []
+    for part in value.split(","):
+        if not part:
+            raise ValueError(f"Invalid --folder {value!r} (example: 1,4-6,10)")
+        if "-" in part:
+            left, sep, right = part.partition("-")
+            if not sep or not left.isdigit() or not right.isdigit():
+                raise ValueError(f"Invalid --folder item {part!r} (example: 1,4-6,10)")
+            start, end = int(left), int(right)
+            if start < 1 or end < 1:
+                raise ValueError("--folder numbers start at 1")
+            if start > end:
+                raise ValueError(f"Range {part} is backwards (use {end}-{start})")
+            chunk = range(start, end + 1)
+        elif part.isdigit():
+            start = int(part)
+            if start < 1:
+                raise ValueError("--folder numbers start at 1")
+            chunk = range(start, start + 1)
+        else:
+            raise ValueError(f"Invalid --folder item {part!r} (example: 1,4-6,10)")
+        for index in chunk:
+            if index not in seen:
+                seen.add(index)
+                numbers.append(index)
+            if len(numbers) > FOLDER_SPEC_MAX:
+                raise ValueError(f"--folder selects at most {FOLDER_SPEC_MAX} albums")
+    numbers.sort()
+    return numbers
+
+
 def format_bytes(size: int | float | None) -> str:
     if size is None:
         return "?"

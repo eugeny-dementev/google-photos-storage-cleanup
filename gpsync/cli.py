@@ -1,20 +1,59 @@
 from __future__ import annotations
 
 import argparse
+import os
+import sys
 from pathlib import Path
 
 from gpsync.auth import clear_session_secrets, import_cookies_txt, login_with_browser
 from gpsync.client import PhotosClient, SessionExpired
 from gpsync.config import load_settings
 from gpsync.db import Database
-from gpsync.download import download_pending
+from gpsync.download import download_pending, fix_downloaded_times
 from gpsync.enumerate import enumerate_all
-from gpsync.util import parse_pause, parse_size
+from gpsync.progress import _enable_windows_vt
+from gpsync.util import parse_folder_spec, parse_pause, parse_size
+
+_BRIGHT_WHITE = "\033[1;97m"
+_RESET = "\033[0m"
+
+
+def _stdout_color() -> bool:
+    if os.environ.get("NO_COLOR"):
+        return False
+    tty = bool(getattr(sys.stdout, "isatty", lambda: False)())
+    if os.environ.get("FORCE_COLOR"):
+        if tty:
+            _enable_windows_vt(sys.stdout)
+        return True
+    if not tty:
+        return False
+    return _enable_windows_vt(sys.stdout)
+
+
+def _cmd(command: str) -> str:
+    wrapped = f"`{command}`"
+    if _stdout_color():
+        return f"{_BRIGHT_WHITE}{wrapped}{_RESET}"
+    return wrapped
+
+
+def _print_execute_hints(hints: list[tuple[str, str]]) -> None:
+    print("Execute")
+    for command, purpose in hints:
+        print(f"  {_cmd(command)} - {purpose}")
 
 
 def _arg_size(value: str) -> int:
     try:
         return parse_size(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
+def _arg_folder(value: str) -> list[int]:
+    try:
+        return parse_folder_spec(value)
     except ValueError as exc:
         raise argparse.ArgumentTypeError(str(exc)) from exc
 
@@ -61,9 +100,9 @@ def main(argv: list[str] | None = None) -> int:
     dl.add_argument("--album", help="Only this album (title substring)")
     dl.add_argument(
         "--folder",
-        type=int,
-        metavar="N",
-        help="Album number from `gpsync status` (1-based row index)",
+        type=_arg_folder,
+        metavar="SPEC",
+        help="Album numbers from `gpsync status`: 3, 1,4,9, 2-5, or 1,4-6,10 (no spaces, max 10)",
     )
     dl.add_argument("--limit", type=int, help="Stop after N files (useful for a test run)")
     dl.add_argument("--workers", type=int, help="Parallel HTTP downloads (default: 2)")
@@ -80,6 +119,11 @@ def main(argv: list[str] | None = None) -> int:
         type=_arg_pause,
         metavar="SEC",
         help="Wait between starting each file, e.g. 3 or 1-5 (seconds). Use --workers 1 to avoid overlap.",
+    )
+    dl.add_argument(
+        "--fix-time",
+        action="store_true",
+        help="Only set capture dates on already downloaded files (no HTTP). Honors --folder/--album.",
     )
 
     sub.add_parser("status", help="Show SQLite progress")
@@ -128,20 +172,27 @@ def main(argv: list[str] | None = None) -> int:
             _print_status(settings)
             return 0
         if args.command == "download":
+            album_keys = _resolve_download_albums(
+                settings,
+                album=args.album,
+                folder=args.folder,
+                assume_yes=assume_yes,
+                intent="fix-time" if args.fix_time else "download",
+            )
+            if args.fix_time:
+                return fix_downloaded_times(
+                    settings,
+                    album_keys=album_keys,
+                    album_filter=args.album if args.folder is None else None,
+                )
             min_size = getattr(args, "min_size", None)
             max_size = getattr(args, "max_size", None)
             if min_size is not None and max_size is not None and min_size > max_size:
                 print("--min-size cannot be greater than --max-size")
                 return 2
-            album_key = _resolve_download_album(
-                settings,
-                album=args.album,
-                folder=args.folder,
-                assume_yes=assume_yes,
-            )
             download_pending(
                 settings,
-                album_key=album_key,
+                album_keys=album_keys,
                 album_filter=args.album if args.folder is None else None,
                 limit=args.limit,
                 workers=args.workers,
@@ -151,7 +202,7 @@ def main(argv: list[str] | None = None) -> int:
                 date_prefix=args.date_prefix,
                 pause=args.pause,
             )
-            _print_status(settings)
+            _print_execute_hints([("gpsync status", "to see the status")])
             return 0
         if args.command == "status":
             _print_status(settings)
@@ -161,38 +212,66 @@ def main(argv: list[str] | None = None) -> int:
     except SessionExpired as exc:
         print(exc)
         return 2
+    except KeyboardInterrupt:
+        print("\nInterrupted (Ctrl+C). SQLite and downloaded files were kept.")
+        if args.command == "download":
+            resume = "gpsync download --fix-time" if getattr(args, "fix_time", False) else "gpsync download"
+            _print_execute_hints(
+                [
+                    (resume, "to resume"),
+                    ("gpsync status", "to see the status"),
+                ]
+            )
+        elif args.command == "enumerate":
+            _print_execute_hints([("gpsync enumerate", "to resume")])
+        return 130
     return 1
 
 
-def _resolve_download_album(
+def _resolve_download_albums(
     settings,
     *,
     album: str | None,
-    folder: int | None,
+    folder: list[int] | None,
     assume_yes: bool,
-) -> str | None:
-    """Return album media_key, or None to download every album."""
+    intent: str = "download",
+) -> list[str] | None:
+    """Return album media_keys, or None to include every album."""
     if album and folder is not None:
-        raise SystemExit("Use either --folder N or --album NAME, not both.")
+        raise SystemExit("Use either --folder SPEC or --album NAME, not both.")
     if folder is None:
         return None
     if not settings.db_path.exists():
         raise SystemExit("No database yet. Run: gpsync enumerate")
+    action = "update file times in" if intent == "fix-time" else "download"
     with Database(settings.db_path) as db:
         rows = db.list_album_status()
-        if folder < 1 or folder > len(rows):
-            raise SystemExit(f"No folder #{folder}. `gpsync status` lists 1..{len(rows) or 0}.")
-        row = rows[folder - 1]
-        title = row["title"] or row["media_key"]
-        total = int(row["total"] or 0)
-        downloaded = int(row["downloaded"] or 0)
-        prompt = (
-            f'You\'re about to download folder #{folder} "{title}" '
-            f"({downloaded}/{total} already downloaded). Continue?"
-        )
+        n = len(rows)
+        missing = [index for index in folder if index < 1 or index > n]
+        if missing:
+            raise SystemExit(f"No folder #{missing[0]}. `gpsync status` lists 1..{n or 0}.")
+        selected = [(index, rows[index - 1]) for index in folder]
+        if len(selected) == 1:
+            index, row = selected[0]
+            title = row["title"] or row["media_key"]
+            total = int(row["total"] or 0)
+            downloaded = int(row["downloaded"] or 0)
+            prompt = (
+                f'You\'re about to {action} folder #{index} "{title}" '
+                f"({downloaded}/{total} already downloaded). Continue?"
+            )
+        else:
+            lines = [f"You're about to {action} {len(selected)} folders:"]
+            for index, row in selected:
+                title = row["title"] or row["media_key"]
+                total = int(row["total"] or 0)
+                downloaded = int(row["downloaded"] or 0)
+                lines.append(f'  #{index} "{title}" ({downloaded}/{total} already downloaded)')
+            lines.append("Continue?")
+            prompt = "\n".join(lines)
         if not _confirm(prompt, assume_yes=assume_yes):
             raise SystemExit("Cancelled.")
-        return row["media_key"]
+        return [row["media_key"] for _index, row in selected]
 
 
 def _logout(settings, *, assume_yes: bool) -> int:
@@ -243,7 +322,7 @@ def _print_status(settings) -> None:
         print()
         print(format_status_table(rows))
         print()
-        print("Use: gpsync download --folder N")
+        print("Use: gpsync download --folder 1,4-6")
 
 
 def format_status_table(rows) -> str:

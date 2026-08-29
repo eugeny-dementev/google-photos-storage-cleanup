@@ -268,6 +268,7 @@ class Database:
     def pending_items(
         self,
         album_key: str | None = None,
+        album_keys: list[str] | None = None,
         failed_only: bool = False,
         min_size: int | None = None,
         max_size: int | None = None,
@@ -285,9 +286,11 @@ class Database:
             WHERE album_items.status IN ({placeholders})
         """
         params: list = list(statuses)
-        if album_key:
-            sql += " AND album_items.album_key = ?"
-            params.append(album_key)
+        keys = [album_key] if album_key else list(album_keys or [])
+        if keys:
+            placeholders_keys = ",".join("?" * len(keys))
+            sql += f" AND album_items.album_key IN ({placeholders_keys})"
+            params.extend(keys)
         if min_size is not None:
             sql += " AND (media.size_bytes IS NULL OR media.size_bytes >= ?)"
             params.append(min_size)
@@ -359,14 +362,16 @@ class Database:
             skipped=count("skipped"),
         )
 
-    def downloaded_rows(self) -> list[sqlite3.Row]:
-        return list(
-            self._conn.execute(
-                """
-                SELECT album_items.*, media.file_name
-                FROM album_items
-                JOIN media ON media.media_key = album_items.media_key
-                WHERE album_items.status = 'downloaded'
-                """
-            )
-        )
+    def downloaded_rows(self, album_keys: list[str] | None = None) -> list[sqlite3.Row]:
+        sql = """
+            SELECT album_items.*, media.file_name, media.taken_ts, media.timezone_offset
+            FROM album_items
+            JOIN media ON media.media_key = album_items.media_key
+            WHERE album_items.status = 'downloaded'
+        """
+        params: list = []
+        if album_keys:
+            placeholders = ",".join("?" * len(album_keys))
+            sql += f" AND album_items.album_key IN ({placeholders})"
+            params.extend(album_keys)
+        return list(self._conn.execute(sql, params))

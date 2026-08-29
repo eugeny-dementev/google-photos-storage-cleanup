@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from gpsync.cli import _resolve_download_album, format_status_table
+from gpsync.cli import _resolve_download_albums, format_status_table
 from gpsync.config import Settings
 from gpsync.db import Database
 
@@ -54,9 +54,32 @@ def test_folder_index_confirm_yes(tmp_path: Path) -> None:
         cookies_path=tmp_path / "cookies.txt",
         db_path=db_path,
     )
-    key = _resolve_download_album(settings, album=None, folder=1, assume_yes=True)
-    assert key == "alb"
+    key = _resolve_download_albums(settings, album=None, folder=[1], assume_yes=True)
+    assert key == ["alb"]
     with pytest.raises(SystemExit, match="No folder #9"):
-        _resolve_download_album(settings, album=None, folder=9, assume_yes=True)
+        _resolve_download_albums(settings, album=None, folder=[9], assume_yes=True)
     with pytest.raises(SystemExit, match="either --folder"):
-        _resolve_download_album(settings, album="Отпуск", folder=1, assume_yes=True)
+        _resolve_download_albums(settings, album="Отпуск", folder=[1], assume_yes=True)
+
+
+def test_folder_spec_selects_several_albums(tmp_path: Path) -> None:
+    db_path = tmp_path / "photos.db"
+    with Database(db_path) as db:
+        db.upsert_album("a", "Alpha")
+        db.upsert_album("b", "Beta")
+        db.upsert_album("c", "Gamma")
+        db.upsert_media("m1", file_name="a.jpg")
+        db.upsert_media("m2", file_name="b.jpg")
+        db.upsert_media("m3", file_name="c.jpg")
+        db.add_album_item("a", "m1")
+        db.add_album_item("b", "m2")
+        db.add_album_item("c", "m3")
+        db._conn.commit()
+    settings = Settings(
+        data_dir=tmp_path,
+        output_dir=tmp_path / "photos",
+        cookies_path=tmp_path / "cookies.txt",
+        db_path=db_path,
+    )
+    keys = _resolve_download_albums(settings, album=None, folder=[1, 3], assume_yes=True)
+    assert keys == ["a", "c"]

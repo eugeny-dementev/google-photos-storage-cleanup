@@ -7,6 +7,7 @@ from gpsync.util import (
     capture_datetime,
     filename_from_content_disposition,
     format_bytes,
+    parse_folder_spec,
     parse_pause,
     parse_size,
     parse_wiz_global_data,
@@ -119,6 +120,34 @@ def test_parse_size_and_format_bytes() -> None:
     assert size_allowed(None, min_size=50, max_size=50) is True
     assert parse_pause("3") == (3.0, 3.0)
     assert parse_pause("1-5") == (1.0, 5.0)
+
+
+def test_parse_folder_spec() -> None:
+    assert parse_folder_spec("3") == [3]
+    assert parse_folder_spec("1,4,9") == [1, 4, 9]
+    assert parse_folder_spec("2-5") == [2, 3, 4, 5]
+    assert parse_folder_spec("1,4-6,10") == [1, 4, 5, 6, 10]
+    assert parse_folder_spec("9,1") == [1, 9]
+    assert parse_folder_spec("1,1,2") == [1, 2]
+    assert parse_folder_spec("1-10") == list(range(1, 11))
+    try:
+        parse_folder_spec("1, 4")
+    except ValueError as exc:
+        assert "spaces" in str(exc).lower()
+    else:
+        raise AssertionError("expected spaces to be rejected")
+    try:
+        parse_folder_spec("1-11")
+    except ValueError as exc:
+        assert "at most 10" in str(exc)
+    else:
+        raise AssertionError("expected 1-11 to exceed the cap")
+    try:
+        parse_folder_spec("5-3")
+    except ValueError as exc:
+        assert "backwards" in str(exc)
+    else:
+        raise AssertionError("expected backwards range to fail")
 
 
 def test_date_prefixes_use_capture_time() -> None:

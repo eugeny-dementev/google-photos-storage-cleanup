@@ -1,6 +1,6 @@
 # Google Photos Sync
 
-**English:** [README.md](README.md) | **Русский:** этот файл
+**English:** [README.md](../README.md) | **Русский:** этот файл
 
 Выгрузка **альбомов Google Photos** (включая те, что шарили с вами) в оригинальном качестве. Python, локальный SQLite, вход через cookies браузера. Работает на **Linux**, Windows и macOS.
 
@@ -182,7 +182,7 @@ gpsync logout
 
 ## Безопасность и зависимости
 
-Cookies и профиль Chromium живут только в `gpsync-data/` (в `.gitignore`). Подробности: [SECURITY.md](SECURITY.md).
+Cookies и профиль Chromium живут только в `gpsync-data/` (в `.gitignore`). Подробности: [SECURITY.md](../SECURITY.md).
 
 Прямые зависимости - три пакета с PyPI с **закреплёнными версиями** в `pyproject.toml`. Код xob0t **не ставится** через pip; используются только перенесённые RPC-оффсеты (MIT).
 
@@ -193,4 +193,4 @@ pip install -e ".[dev]"
 pytest
 ```
 
-Сторонние наработки - [CREDITS.md](CREDITS.md). Лицензия - [LICENSE](LICENSE). Upstream MIT xob0t - [third_party/xob0t-LICENSE](third_party/xob0t-LICENSE).
+Сторонние наработки - [CREDITS.md](../CREDITS.md). Лицензия - [LICENSE](../LICENSE). Upstream MIT xob0t - [third_party/xob0t-LICENSE](../third_party/xob0t-LICENSE).

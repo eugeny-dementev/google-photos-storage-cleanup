@@ -1,6 +1,6 @@
 # Google Photos Sync
 
-**English:** this file | **Русский:** [README-ru.md](README-ru.md)
+**English:** this file | **Русский:** [docs/README.ru.md](docs/README.ru.md)
 
 Download **Google Photos albums** (including albums shared with you) at original quality. Python, local SQLite, browser-cookie login. Runs on **Linux**, Windows, and macOS.
 

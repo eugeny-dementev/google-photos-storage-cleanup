@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from gpsync.auth import import_cookies_txt, login_with_browser
+from gpsync.auth import clear_session_secrets, import_cookies_txt, login_with_browser
 from gpsync.client import PhotosClient, SessionExpired
 from gpsync.config import load_settings
 from gpsync.db import Database
@@ -35,6 +35,12 @@ def main(argv: list[str] | None = None) -> int:
 
     login = sub.add_parser("login", help="Log in via Chromium and save cookies")
     login.add_argument("--cookies", type=Path, help="Import an existing Netscape cookies.txt instead")
+
+    logout = sub.add_parser(
+        "logout",
+        help="Delete cookies and Chromium profile; keep SQLite and downloaded files",
+    )
+    logout.add_argument("-y", "--yes", action="store_true", default=argparse.SUPPRESS, help="Assume yes for prompts")
 
     sub.add_parser("whoami", help="Check that cookies still work")
 
@@ -93,6 +99,8 @@ def main(argv: list[str] | None = None) -> int:
                 login_with_browser(settings)
             settings.save()
             return 0
+        if args.command == "logout":
+            return _logout(settings, assume_yes=assume_yes)
         if args.command == "whoami":
             client = PhotosClient(settings.cookies_path, settings.account_index)
             print(client.email)
@@ -171,6 +179,25 @@ def _resolve_download_album(
         if not _confirm(prompt, assume_yes=assume_yes):
             raise SystemExit("Cancelled.")
         return row["media_key"]
+
+
+def _logout(settings, *, assume_yes: bool) -> int:
+    prompt = (
+        "Delete session secrets (cookies.txt and Chromium profile)? "
+        "SQLite and downloaded files will be kept."
+    )
+    if not _confirm(prompt, assume_yes=assume_yes):
+        raise SystemExit("Cancelled.")
+    removed = clear_session_secrets(settings)
+    if not removed:
+        print("No session files found.")
+    else:
+        for path in removed:
+            print(f"Removed {path}")
+    print(f"Kept database: {settings.db_path}")
+    print(f"Kept downloads: {settings.output_dir}")
+    print("Sign in again with: gpsync login")
+    return 0
 
 
 def _confirm(prompt: str, *, assume_yes: bool) -> bool:

@@ -53,7 +53,7 @@ These were reviewed while choosing an approach and are **not** sources of this c
 
 Everything else is written for this repository, including:
 
-- `gpsync` CLI (`init`, `login`, `whoami`, `enumerate`, `download`, `status`, `verify`)
+- `gpsync` CLI (`init`, `login`, `logout`, `whoami`, `enumerate`, `download`, `status`, `verify`)
 - Local SQLite state (`pending` / `downloaded` / `failed` per album+item) so long runs can stop and resume
 - Album-folder layout, duplicate-in-two-albums copy-from-disk (no second HTTP download)
 - HTTP original download (including Live Photo companion video and zip unwrap)

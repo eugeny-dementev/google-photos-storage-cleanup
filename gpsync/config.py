@@ -24,6 +24,10 @@ class Settings:
     def config_path(self) -> Path:
         return self.data_dir / "config.json"
 
+    @property
+    def browser_profile_dir(self) -> Path:
+        return self.data_dir / "browser-profile"
+
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.output_dir.mkdir(parents=True, exist_ok=True)

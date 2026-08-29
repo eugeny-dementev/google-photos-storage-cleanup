@@ -121,7 +121,11 @@ gpsync whoami
 gpsync --account-index 1 whoami
 ```
 
-`cookies.txt` — это пароль. Не коммитьте его и не шарьте.
+`cookies.txt` — это пароль. Не коммитьте его и не шарьте. Сбросить сессию, не трогая базу и скачанные файлы:
+
+```bash
+gpsync logout
+```
 
 ## Команды
 
@@ -130,6 +134,8 @@ gpsync --account-index 1 whoami
 | `gpsync init --output PATH` | Куда складывать файлы |
 | `gpsync login` | Войти через Chromium |
 | `gpsync login --cookies FILE` | Импорт Netscape cookies |
+| `gpsync logout` | Удалить cookies и профиль Chromium; SQLite и файлы оставить |
+| `gpsync logout -y` | То же без вопроса |
 | `gpsync whoami` | Проверить, что сессия жива |
 | `gpsync enumerate` | Собрать альбомы и элементы в SQLite |
 | `gpsync enumerate --library` | Плюс основная лента Library (и archived) |

@@ -123,7 +123,11 @@ Several Google accounts in one cookie jar (`photos.google.com/u/1/`):
 gpsync --account-index 1 whoami
 ```
 
-Treat `cookies.txt` as a password. Do not commit or share it.
+Treat `cookies.txt` as a password. Do not commit or share it. To drop the session without touching the database or downloaded files:
+
+```bash
+gpsync logout
+```
 
 ## Commands
 
@@ -132,6 +136,8 @@ Treat `cookies.txt` as a password. Do not commit or share it.
 | `gpsync init --output PATH` | Where to store files |
 | `gpsync login` | Sign in via Chromium |
 | `gpsync login --cookies FILE` | Import Netscape cookies |
+| `gpsync logout` | Delete cookies and Chromium profile; keep SQLite and downloads |
+| `gpsync logout -y` | Same, no prompt |
 | `gpsync whoami` | Check that the session is alive |
 | `gpsync enumerate` | Walk albums into SQLite |
 | `gpsync enumerate --library` | Also scan the main Library timeline (and archived) |

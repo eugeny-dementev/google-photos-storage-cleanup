@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 from http.cookiejar import MozillaCookieJar
 from pathlib import Path
@@ -73,6 +74,31 @@ def _restrict_private_file(path: Path) -> None:
         pass
 
 
+def clear_session_secrets(settings: Settings) -> list[Path]:
+    """Delete cookies and the Chromium profile. Never touches SQLite or downloads."""
+    protected = {
+        settings.db_path.resolve(),
+        settings.config_path.resolve(),
+        settings.output_dir.resolve(),
+        settings.data_dir.resolve(),
+    }
+    cookies = settings.cookies_path.resolve()
+    if cookies in protected:
+        raise RuntimeError(f"Refusing to delete protected path: {cookies}")
+    profile = settings.browser_profile_dir.resolve()
+    if profile in protected:
+        raise RuntimeError(f"Refusing to delete protected path: {profile}")
+
+    removed: list[Path] = []
+    if settings.cookies_path.is_file():
+        settings.cookies_path.unlink()
+        removed.append(settings.cookies_path)
+    if settings.browser_profile_dir.exists():
+        shutil.rmtree(settings.browser_profile_dir)
+        removed.append(settings.browser_profile_dir)
+    return removed
+
+
 def login_with_browser(settings: Settings) -> None:
     try:
         from playwright.sync_api import Error as PlaywrightError
@@ -84,7 +110,7 @@ def login_with_browser(settings: Settings) -> None:
 
     _require_display()
     settings.ensure_dirs()
-    profile_dir = settings.data_dir / "browser-profile"
+    profile_dir = settings.browser_profile_dir
     print("Opening Chromium. Log in to Google Photos in the window.")
     print("When you see your library at https://photos.google.com/, return here and press Enter.")
 

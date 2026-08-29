@@ -11,6 +11,8 @@
 
 Do not commit, zip, or share that directory. After `gpsync login` / cookie import the files are created with owner-only permissions where the OS allows it.
 
+`gpsync logout` deletes only `cookies.txt` and `browser-profile/`. It does not delete `photos.db`, `config.json`, or the download output directory.
+
 Cookie import (`gpsync login --cookies`) keeps only Google-related domains; it does not copy the rest of a full-browser export.
 
 ## What this project installs

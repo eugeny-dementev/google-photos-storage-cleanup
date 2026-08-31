@@ -152,17 +152,24 @@ gpsync logout
 | `gpsync download --folder 10` | Album number from `gpsync status` (asks Y/N) |
 | `gpsync download --folder 1,4-6,10` | Several albums: commas, `N-M` ranges, no spaces, max 10 |
 | `gpsync download -y --folder 10` | Same, no prompt |
+| `gpsync download --ignore-folder 1,2,4` | Skip those albums this run only (numbers from `gpsync status`) |
+| `gpsync ignore --folder 1,2,4` | Permanently skip those albums on `gpsync download` |
+| `gpsync ignore -y --folder 1,2,4` | Same, no prompt |
+| `gpsync unignore --folder 1,2` | Clear the ignore flag on those albums |
+| `gpsync unignore --all` | Clear the ignore flag on every album |
 | `gpsync download --date-prefix` | Prefix albums `YYYY.MM.DD ...` and files `YYYY.MM.DD HH.MM ...` (capture time) |
 | `gpsync download --pause 3` | Wait 3 seconds between starting each file |
 | `gpsync download --pause 1-5` | Random wait 1-5 seconds between file starts |
 | `gpsync download --fix-time` | Set capture dates on already downloaded files (no HTTP) |
 | `gpsync download --fix-time --folder 1,4` | Same, only those albums |
-| `gpsync status` | Album table: `#`, name, shared, done/total, failures, last enumerate |
+| `gpsync status` | Album table: `#`, name, shared, done/total, fail, ignore, last enumerate |
 | `gpsync verify --reset` | Missing files on disk become `pending` again |
 
 Defaults: `--data-dir gpsync-data`, `--output-dir photos`.
 
-`gpsync status` prints a table. Column `#` is the index for `--folder`. Use `1,4,9` or `2-5` or `1,4-6,10` (no spaces). At most 10 albums after ranges are expanded. Album names are quoted. `done/total` is downloaded / rows in the database. `scanned` is the last enumerate time.
+`gpsync status` prints a table. Column `#` is the index for `--folder` / `--ignore-folder` / `gpsync ignore`. Use `1,4,9` or `2-5` or `1,4-6,10` (no spaces). At most 10 albums after ranges are expanded. Album names are quoted. `done/total` is downloaded / rows in the database. `ignore` is `yes` if `gpsync ignore` marked the album. `scanned` is the last enumerate time.
+
+`gpsync download` without `--folder` / `--album` skips permanently ignored albums. `--folder` or `--album` still downloads them. `--ignore-folder` skips extra albums for that run only and does not write SQLite. Combine with `--folder`: `gpsync download --folder 1-10 --ignore-folder 3,5`.
 
 `--date-prefix` is off unless you pass the flag. File times use `HH.MM`, not `HH:MM` (`:` is illegal in Windows names). The album date is the earliest capture in that album.
 
@@ -170,7 +177,7 @@ Defaults: `--data-dir gpsync-data`, `--output-dir photos`.
 
 `--pause` spaces out when each file starts. With `--workers` greater than 1, transfers can still overlap; use `--workers 1 --pause 1-5` for a gap after each file finishes before the next starts.
 
-`--fix-time` does not download. It walks `downloaded` rows in SQLite and sets each file's mtime (and Windows creation time) to the capture date from enumerate. It uses the stored `local_path` (and Live Photo companion path), so names from `--date-prefix` are found. `--folder` / `--album` limit which albums; `--pause`, `--workers`, size filters, and `--date-prefix` are ignored.
+`--fix-time` does not download. It walks `downloaded` rows in SQLite and sets each file's mtime (and Windows creation time) to the capture date from enumerate. It uses the stored `local_path` (and Live Photo companion path), so names from `--date-prefix` are found. `--folder` / `--album` / `--ignore-folder` limit which albums; `--pause`, `--workers`, size filters, and `--date-prefix` are ignored. Permanently ignored albums are skipped unless you pass `--folder` or `--album`.
 
 **Ctrl+C** stops `gpsync download` and `gpsync enumerate`. Files already written and SQLite are kept; in-progress transfers are dropped and stay `pending`. Run the same command again to resume.
 

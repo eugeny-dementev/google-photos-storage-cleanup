@@ -91,6 +91,7 @@ def download_pending(
     album_key: str | None = None,
     album_keys: list[str] | None = None,
     album_filter: str | None = None,
+    exclude_album_keys: list[str] | None = None,
     limit: int | None = None,
     workers: int | None = None,
     failed_only: bool = False,
@@ -113,7 +114,7 @@ def download_pending(
         pause_max=None if pause is None else pause[1],
     )
     with Database(settings.db_path) as db:
-        selected_keys = list(album_keys) if album_keys else None
+        selected_keys = list(album_keys) if album_keys is not None else None
         if selected_keys is None and album_key is None and album_filter:
             matches = db.find_albums(album_filter)
             if not matches:
@@ -124,15 +125,27 @@ def download_pending(
             selected_keys = [matches[0]["media_key"]]
         elif selected_keys is None and album_key:
             selected_keys = [album_key]
+        skip_ignored = selected_keys is None
         items = db.pending_items(
             album_keys=selected_keys,
             failed_only=failed_only,
             min_size=min_size,
             max_size=max_size,
+            skip_ignored=skip_ignored,
+            exclude_album_keys=exclude_album_keys,
         )
         if limit is not None:
             items = items[:limit]
         total = len(items)
+        if skip_ignored:
+            ignored = db.ignored_album_count()
+            if ignored:
+                print(
+                    f"Skipping {ignored} ignored album(s). "
+                    "Use `gpsync unignore --folder N` to include them again."
+                )
+        if exclude_album_keys:
+            print(f"Skipping {len(exclude_album_keys)} album(s) from --ignore-folder this run.")
         if total == 0:
             print("Nothing to download.")
             return
@@ -207,13 +220,14 @@ def fix_downloaded_times(
     *,
     album_keys: list[str] | None = None,
     album_filter: str | None = None,
+    exclude_album_keys: list[str] | None = None,
 ) -> int:
     """Set mtime/ctime on already downloaded files from SQLite capture dates. No HTTP."""
     if not settings.db_path.exists():
         print("No database yet. Run: gpsync enumerate")
         return 2
     with Database(settings.db_path) as db:
-        selected = list(album_keys) if album_keys else None
+        selected = list(album_keys) if album_keys is not None else None
         if selected is None and album_filter:
             matches = db.find_albums(album_filter)
             if not matches:
@@ -222,7 +236,14 @@ def fix_downloaded_times(
                 names = ", ".join(row["title"] or row["media_key"] for row in matches[:8])
                 raise SystemExit(f"Ambiguous album filter {album_filter!r}: {names}")
             selected = [matches[0]["media_key"]]
-        rows = [dict(row) for row in db.downloaded_rows(album_keys=selected)]
+        rows = [
+            dict(row)
+            for row in db.downloaded_rows(
+                album_keys=selected,
+                skip_ignored=selected is None,
+                exclude_album_keys=exclude_album_keys,
+            )
+        ]
 
     if not rows:
         print("No downloaded files to update.")

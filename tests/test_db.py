@@ -70,6 +70,63 @@ def test_pending_items_respects_size_filters(tmp_path: Path) -> None:
         assert names(db.pending_items(min_size=50)) == {"b.mp4", "u.jpg"}
 
 
+def test_ignored_albums_skipped_unless_selected(tmp_path: Path) -> None:
+    with Database(tmp_path / "photos.db") as db:
+        db.upsert_album("keep", "Keep")
+        db.upsert_album("skip", "Skip")
+        db.upsert_media("m1", file_name="keep.jpg")
+        db.upsert_media("m2", file_name="skip.jpg")
+        db.add_album_item("keep", "m1")
+        db.add_album_item("skip", "m2")
+        db.set_albums_ignored(["skip"], True)
+        db._conn.commit()
+
+        def names(rows):
+            return {row["file_name"] for row in rows}
+
+        assert names(db.pending_items()) == {"keep.jpg", "skip.jpg"}
+        assert names(db.pending_items(skip_ignored=True)) == {"keep.jpg"}
+        assert names(db.pending_items(album_keys=["skip"], skip_ignored=False)) == {"skip.jpg"}
+        assert names(db.pending_items(exclude_album_keys=["keep"])) == {"skip.jpg"}
+        assert db.pending_items(album_keys=[]) == []
+        assert db.ignored_album_count() == 1
+        db.upsert_album("skip", "Skip renamed")
+        assert db.get_album("skip")["ignored"] == 1
+        assert db.get_album("skip")["title"] == "Skip renamed"
+        n = db.clear_all_ignored()
+        assert n == 1
+        assert names(db.pending_items(skip_ignored=True)) == {"keep.jpg", "skip.jpg"}
+
+
+def test_migrates_ignored_column_on_existing_db(tmp_path: Path) -> None:
+    import sqlite3
+
+    path = tmp_path / "photos.db"
+    conn = sqlite3.connect(path)
+    conn.execute(
+        """
+        CREATE TABLE albums (
+            media_key TEXT PRIMARY KEY,
+            title TEXT,
+            is_shared INTEGER NOT NULL DEFAULT 0,
+            auth_key TEXT,
+            owner_name TEXT,
+            item_count INTEGER,
+            source TEXT NOT NULL DEFAULT 'albums',
+            enumerated_at TEXT,
+            status TEXT NOT NULL DEFAULT 'pending'
+        )
+        """
+    )
+    conn.execute("INSERT INTO albums (media_key, title) VALUES ('old', 'Old')")
+    conn.commit()
+    conn.close()
+    with Database(path) as db:
+        assert db.get_album("old")["ignored"] == 0
+        db.set_albums_ignored(["old"], True)
+        assert db.get_album("old")["ignored"] == 1
+
+
 def test_same_photo_in_two_albums(tmp_path: Path) -> None:
     with Database(tmp_path / "photos.db") as db:
         db.upsert_album("a", "A")

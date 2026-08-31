@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS albums (
     item_count INTEGER,
     source TEXT NOT NULL DEFAULT 'albums',
     enumerated_at TEXT,
-    status TEXT NOT NULL DEFAULT 'pending'
+    status TEXT NOT NULL DEFAULT 'pending',
+    ignored INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS media (
@@ -82,6 +83,13 @@ class Database:
         self._conn = sqlite3.connect(path, timeout=30)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        columns = {row[1] for row in self._conn.execute("PRAGMA table_info(albums)")}
+        if "ignored" not in columns:
+            self._conn.execute("ALTER TABLE albums ADD COLUMN ignored INTEGER NOT NULL DEFAULT 0")
+            self._conn.commit()
 
     def close(self) -> None:
         self._conn.close()
@@ -225,6 +233,7 @@ class Database:
                     albums.is_shared,
                     albums.enumerated_at,
                     albums.status,
+                    albums.ignored,
                     albums.item_count,
                     COUNT(album_items.id) AS total,
                     COALESCE(SUM(CASE WHEN album_items.status = 'downloaded' THEN 1 ELSE 0 END), 0) AS downloaded,
@@ -265,6 +274,25 @@ class Database:
             )
         )
 
+    def set_albums_ignored(self, media_keys: list[str], ignored: bool) -> int:
+        if not media_keys:
+            return 0
+        placeholders = ",".join("?" * len(media_keys))
+        cur = self._conn.execute(
+            f"UPDATE albums SET ignored = ? WHERE media_key IN ({placeholders})",
+            [int(ignored), *media_keys],
+        )
+        self._conn.commit()
+        return cur.rowcount
+
+    def clear_all_ignored(self) -> int:
+        cur = self._conn.execute("UPDATE albums SET ignored = 0 WHERE ignored != 0")
+        self._conn.commit()
+        return cur.rowcount
+
+    def ignored_album_count(self) -> int:
+        return self._conn.execute("SELECT COUNT(*) FROM albums WHERE ignored != 0").fetchone()[0]
+
     def pending_items(
         self,
         album_key: str | None = None,
@@ -272,7 +300,12 @@ class Database:
         failed_only: bool = False,
         min_size: int | None = None,
         max_size: int | None = None,
+        skip_ignored: bool = False,
+        exclude_album_keys: list[str] | None = None,
     ) -> list[sqlite3.Row]:
+        include, exclude = self._normalize_album_filters(album_key, album_keys, exclude_album_keys)
+        if include is not None and not include:
+            return []
         statuses = ("failed",) if failed_only else ("pending", "failed")
         placeholders = ",".join("?" * len(statuses))
         sql = f"""
@@ -286,11 +319,13 @@ class Database:
             WHERE album_items.status IN ({placeholders})
         """
         params: list = list(statuses)
-        keys = [album_key] if album_key else list(album_keys or [])
-        if keys:
-            placeholders_keys = ",".join("?" * len(keys))
-            sql += f" AND album_items.album_key IN ({placeholders_keys})"
-            params.extend(keys)
+        sql, params = self._apply_album_filters(
+            sql,
+            params,
+            include=include,
+            exclude=exclude,
+            skip_ignored=skip_ignored,
+        )
         if min_size is not None:
             sql += " AND (media.size_bytes IS NULL OR media.size_bytes >= ?)"
             params.append(min_size)
@@ -362,16 +397,68 @@ class Database:
             skipped=count("skipped"),
         )
 
-    def downloaded_rows(self, album_keys: list[str] | None = None) -> list[sqlite3.Row]:
+    def downloaded_rows(
+        self,
+        album_keys: list[str] | None = None,
+        skip_ignored: bool = False,
+        exclude_album_keys: list[str] | None = None,
+    ) -> list[sqlite3.Row]:
+        include, exclude = self._normalize_album_filters(None, album_keys, exclude_album_keys)
+        if include is not None and not include:
+            return []
         sql = """
             SELECT album_items.*, media.file_name, media.taken_ts, media.timezone_offset
             FROM album_items
+            JOIN albums ON albums.media_key = album_items.album_key
             JOIN media ON media.media_key = album_items.media_key
             WHERE album_items.status = 'downloaded'
         """
         params: list = []
-        if album_keys:
-            placeholders = ",".join("?" * len(album_keys))
-            sql += f" AND album_items.album_key IN ({placeholders})"
-            params.extend(album_keys)
+        sql, params = self._apply_album_filters(
+            sql,
+            params,
+            include=include,
+            exclude=exclude,
+            skip_ignored=skip_ignored,
+        )
         return list(self._conn.execute(sql, params))
+
+    def _normalize_album_filters(
+        self,
+        album_key: str | None,
+        album_keys: list[str] | None,
+        exclude_album_keys: list[str] | None,
+    ) -> tuple[list[str] | None, list[str]]:
+        if album_key:
+            include: list[str] | None = [album_key]
+        elif album_keys is not None:
+            include = list(album_keys)
+        else:
+            include = None
+        exclude = [key for key in (exclude_album_keys or []) if key]
+        if include is not None and exclude:
+            skip = set(exclude)
+            include = [key for key in include if key not in skip]
+            exclude = []
+        return include, exclude
+
+    def _apply_album_filters(
+        self,
+        sql: str,
+        params: list,
+        *,
+        include: list[str] | None,
+        exclude: list[str],
+        skip_ignored: bool,
+    ) -> tuple[str, list]:
+        if include is not None:
+            placeholders = ",".join("?" * len(include))
+            sql += f" AND album_items.album_key IN ({placeholders})"
+            params.extend(include)
+        if exclude:
+            placeholders = ",".join("?" * len(exclude))
+            sql += f" AND album_items.album_key NOT IN ({placeholders})"
+            params.extend(exclude)
+        if skip_ignored:
+            sql += " AND albums.ignored = 0"
+        return sql, params

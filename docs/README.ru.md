@@ -150,17 +150,24 @@ gpsync logout
 | `gpsync download --folder 10` | Альбом с таким номером в `gpsync status` (спросит Y/N) |
 | `gpsync download --folder 1,4-6,10` | Несколько альбомов: запятые, диапазоны `N-M`, без пробелов, максимум 10 |
 | `gpsync download -y --folder 10` | То же без вопроса |
+| `gpsync download --ignore-folder 1,2,4` | Не качать эти альбомы только в этом запуске (номера из `gpsync status`) |
+| `gpsync ignore --folder 1,2,4` | Навсегда пропускать эти альбомы при `gpsync download` |
+| `gpsync ignore -y --folder 1,2,4` | То же без вопроса |
+| `gpsync unignore --folder 1,2` | Снять флаг ignore с этих альбомов |
+| `gpsync unignore --all` | Снять флаг ignore со всех альбомов |
 | `gpsync download --date-prefix` | Имена: папка `YYYY.MM.DD ...`, файл `YYYY.MM.DD HH.MM ...` (по времени съёмки) |
 | `gpsync download --pause 3` | Пауза 3 секунды между стартом каждого файла |
 | `gpsync download --pause 1-5` | Случайная пауза 1-5 секунд между стартами |
 | `gpsync download --fix-time` | Проставить даты съёмки уже скачанным файлам (без HTTP) |
 | `gpsync download --fix-time --folder 1,4` | То же только для этих альбомов |
-| `gpsync status` | Таблица альбомов: `#`, имя, shared, скачано/всего, ошибки, дата enumerate |
+| `gpsync status` | Таблица альбомов: `#`, имя, shared, скачано/всего, ошибки, ignore, дата enumerate |
 | `gpsync verify --reset` | Пропавшие с диска файлы снова станут `pending` |
 
 Пути по умолчанию: `--data-dir gpsync-data`, `--output-dir photos`.
 
-`gpsync status` рисует таблицу. Колонка `#` - номер для `--folder`. Можно `1,4,9`, `2-5` или `1,4-6,10` (без пробелов). После раскрытия диапазонов не больше 10 альбомов. Имена альбомов в кавычках, `done/total` - скачано / всего в базе, `scanned` - время последнего `enumerate`.
+`gpsync status` рисует таблицу. Колонка `#` - номер для `--folder` / `--ignore-folder` / `gpsync ignore`. Можно `1,4,9`, `2-5` или `1,4-6,10` (без пробелов). После раскрытия диапазонов не больше 10 альбомов. Имена альбомов в кавычках, `done/total` - скачано / всего в базе, `ignore` - `yes` если альбом помечен через `gpsync ignore`, `scanned` - время последнего `enumerate`.
+
+`gpsync download` без `--folder` / `--album` пропускает альбомы с постоянным ignore. `--folder` или `--album` качают их всё равно. `--ignore-folder` пропускает альбомы только в этом запуске и SQLite не меняет. Можно вместе с `--folder`: `gpsync download --folder 1-10 --ignore-folder 3,5`.
 
 `--date-prefix` по умолчанию выключен. Для файлов время идёт как `HH.MM`, а не `HH:MM`: двоеточие нельзя в имени файла на Windows. Дата папки - съёмка самого раннего файла в альбоме.
 
@@ -168,7 +175,7 @@ gpsync logout
 
 `--pause` разносит момент старта каждого файла. Если `--workers` больше 1, загрузки всё ещё могут идти параллельно; для паузы после каждого файла: `--workers 1 --pause 1-5`.
 
-`--fix-time` ничего не качает. Берёт уже скачанные строки из SQLite и ставит mtime (на Windows ещё creation time) по дате съёмки из enumerate. Путь берётся из `local_path` в базе (и companion у Live Photo), поэтому файлы, скачанные с `--date-prefix`, находятся. `--folder` / `--album` ограничивают альбомы; `--pause`, `--workers`, фильтры размера и `--date-prefix` игнорируются.
+`--fix-time` ничего не качает. Берёт уже скачанные строки из SQLite и ставит mtime (на Windows ещё creation time) по дате съёмки из enumerate. Путь берётся из `local_path` в базе (и companion у Live Photo), поэтому файлы, скачанные с `--date-prefix`, находятся. `--folder` / `--album` / `--ignore-folder` ограничивают альбомы; `--pause`, `--workers`, фильтры размера и `--date-prefix` игнорируются. Альбомы с постоянным ignore пропускаются, если не указаны `--folder` или `--album`.
 
 **Ctrl+C** останавливает `gpsync download` и `gpsync enumerate`. Уже записанные файлы и SQLite остаются; незавершённая загрузка сбрасывается и элемент остаётся `pending`. Повторите ту же команду, чтобы продолжить.
 

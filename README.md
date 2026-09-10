@@ -28,9 +28,8 @@ Python 3.11+.
 ```bash
 cd google-photos-sync
 python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-playwright install chromium
+.venv/bin/pip install -e .
+.venv/bin/playwright install chromium
 ```
 
 On Linux, Chromium often needs extra system libraries. If the window fails to open:
@@ -46,22 +45,29 @@ playwright install-deps chromium
 ```powershell
 cd google-photos-sync
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -e .
-playwright install chromium
+.\.venv\Scripts\pip install -e .
+.\.venv\Scripts\playwright install chromium
 ```
 
-After the venv is active, `gpsync` is on your PATH for that terminal.
+After that you do **not** need to activate the venv. From the project folder:
+
+```bash
+./gpsync.sh status       # Linux, macOS, WSL
+.\gpsync status          # Windows (cmd or PowerShell)
+./run.py status          # same thing, Python launcher
+```
+
+The launcher uses `.venv` next to itself, then runs as if you were in the project folder (`gpsync-data` stays there).
 
 ## Quick start
 
 ```bash
-gpsync init --output ~/Photos/GooglePhotos
-gpsync login
-gpsync enumerate
-gpsync download --limit 5          # small test batch
-gpsync status
-gpsync download                    # everything still pending
+./gpsync.sh init --output ~/Photos/GooglePhotos
+./gpsync.sh login
+./gpsync.sh enumerate
+./gpsync.sh download --limit 5          # small test batch
+./gpsync.sh status
+./gpsync.sh download                    # everything still pending
 ```
 
 On Windows the output path can be `D:\Photos\GooglePhotos`.
@@ -130,6 +136,8 @@ gpsync logout
 ```
 
 ## Commands
+
+In the table, `gpsync` means `./gpsync.sh` on Linux/macOS/WSL or `.\gpsync` on Windows. No `activate`.
 
 | Command | Purpose |
 |---|---|

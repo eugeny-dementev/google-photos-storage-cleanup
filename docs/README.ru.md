@@ -26,9 +26,8 @@
 ```bash
 cd google-photos-sync
 python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-playwright install chromium
+.venv/bin/pip install -e .
+.venv/bin/playwright install chromium
 ```
 
 На Linux Chromium часто требует системные библиотеки. Если окно не открывается:
@@ -44,22 +43,29 @@ playwright install-deps chromium
 ```powershell
 cd google-photos-sync
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -e .
-playwright install chromium
+.\.venv\Scripts\pip install -e .
+.\.venv\Scripts\playwright install chromium
 ```
 
-После активации venv команда `gpsync` доступна в этом терминале.
+Дальше **не нужно** делать `activate`. Из папки проекта:
+
+```bash
+./gpsync.sh status       # Linux, macOS, WSL
+.\gpsync status          # Windows (cmd или PowerShell)
+./run.py status          # то же самое, Python-лаунчер
+```
+
+Скрипт сам берёт `.venv` рядом с собой и запускается из папки проекта (`gpsync-data` остаётся там).
 
 ## Быстрый старт
 
 ```bash
-gpsync init --output ~/Photos/GooglePhotos
-gpsync login
-gpsync enumerate
-gpsync download --limit 5          # пробная пачка
-gpsync status
-gpsync download                    # всё оставшееся
+./gpsync.sh init --output ~/Photos/GooglePhotos
+./gpsync.sh login
+./gpsync.sh enumerate
+./gpsync.sh download --limit 5          # пробная пачка
+./gpsync.sh status
+./gpsync.sh download                    # всё оставшееся
 ```
 
 На Windows путь может быть, например, `D:\Photos\GooglePhotos`.
@@ -128,6 +134,8 @@ gpsync logout
 ```
 
 ## Команды
+
+В таблице `gpsync` значит `./gpsync.sh` на Linux/macOS/WSL или `.\gpsync` на Windows. `activate` не нужен.
 
 | Команда | Зачем |
 |---|---|

@@ -9,7 +9,7 @@ from pathlib import Path
 from gpsync.auth import clear_session_secrets, import_cookies_txt, login_with_browser
 from gpsync.client import PhotosClient, SessionExpired
 from gpsync.config import load_settings
-from gpsync.db import Database
+from gpsync.db import LIBRARY_ALBUM_KEY, Database, number_album_rows
 from gpsync.download import download_pending, fix_downloaded_times
 from gpsync.enumerate import enumerate_all
 from gpsync.progress import _enable_windows_vt
@@ -92,7 +92,11 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("whoami", help="Check that cookies still work")
 
     enum = sub.add_parser("enumerate", help="List albums and items into SQLite")
-    enum.add_argument("--library", action="store_true", help="Also scan the main library timeline")
+    enum.add_argument(
+        "--library",
+        action="store_true",
+        help="Scan the main Library timeline (status #0). Download later with `gpsync download --library`",
+    )
     enum.add_argument("--album", help="Only albums whose title contains this text")
     enum.add_argument("--refresh", action="store_true", help="Re-scan albums already in the database")
 
@@ -103,7 +107,12 @@ def main(argv: list[str] | None = None) -> int:
         "--folder",
         type=_arg_folder,
         metavar="SPEC",
-        help="Album numbers from `gpsync status`: 3, 1,4,9, 2-5, or 1,4-6,10 (no spaces, max 10)",
+        help="Album numbers from `gpsync status`: 0 (library), 3, 1,4,9, 2-5, or 1,4-6,10 (no spaces, max 10)",
+    )
+    dl.add_argument(
+        "--library",
+        action="store_true",
+        help="Download the main Library timeline (#0) into a `library/` folder. Default download skips it.",
     )
     dl.add_argument(
         "--ignore-folder",
@@ -130,7 +139,7 @@ def main(argv: list[str] | None = None) -> int:
     dl.add_argument(
         "--fix-time",
         action="store_true",
-        help="Only set capture dates on already downloaded files (no HTTP). Honors --folder/--album/--ignore-folder.",
+        help="Only set capture dates on already downloaded files (no HTTP). Honors --folder/--album/--library/--ignore-folder.",
     )
 
     ign = sub.add_parser("ignore", help="Permanently skip albums on `gpsync download`")
@@ -204,6 +213,7 @@ def main(argv: list[str] | None = None) -> int:
                 album=args.album,
                 folder=args.folder,
                 ignore_folder=args.ignore_folder,
+                include_library=bool(args.library),
                 assume_yes=assume_yes,
                 intent="fix-time" if args.fix_time else "download",
             )
@@ -211,7 +221,7 @@ def main(argv: list[str] | None = None) -> int:
                 return fix_downloaded_times(
                     settings,
                     album_keys=picked.keys,
-                    album_filter=args.album if args.folder is None else None,
+                    album_filter=args.album if picked.keys is None else None,
                     exclude_album_keys=picked.exclude_keys,
                 )
             min_size = getattr(args, "min_size", None)
@@ -222,7 +232,7 @@ def main(argv: list[str] | None = None) -> int:
             download_pending(
                 settings,
                 album_keys=picked.keys,
-                album_filter=args.album if args.folder is None else None,
+                album_filter=args.album if picked.keys is None else None,
                 exclude_album_keys=picked.exclude_keys,
                 limit=args.limit,
                 workers=args.workers,
@@ -276,42 +286,85 @@ def _resolve_download_albums(
     album: str | None,
     folder: list[int] | None,
     ignore_folder: list[int] | None = None,
+    include_library: bool = False,
     assume_yes: bool,
     intent: str = "download",
 ) -> AlbumPick:
-    """Return album media_keys, or keys=None to include every album."""
+    """Return album media_keys, or keys=None to include every album except library."""
     if album and (folder is not None or ignore_folder is not None):
         raise SystemExit("Use either --folder/--ignore-folder or --album NAME, not both.")
-    if folder is None and ignore_folder is None:
-        return AlbumPick(keys=None, exclude_keys=[])
+    if folder is None and ignore_folder is None and not include_library and not album:
+        return AlbumPick(keys=None, exclude_keys=[LIBRARY_ALBUM_KEY])
     if not settings.db_path.exists():
-        raise SystemExit("No database yet. Run: gpsync enumerate")
+        hint = "gpsync enumerate --library" if include_library else "gpsync enumerate"
+        raise SystemExit(f"No database yet. Run: {hint}")
     action = "update file times in" if intent == "fix-time" else "download"
     with Database(settings.db_path) as db:
-        exclude_keys: list[str] = []
+        ignore_keys: list[str] = []
         if ignore_folder is not None:
-            exclude_keys = [row["media_key"] for _index, row in _indexed_albums(db, ignore_folder)]
-        if folder is None:
+            ignore_keys = [row["media_key"] for _index, row in _indexed_albums(db, ignore_folder)]
+
+        if folder is None and not include_library and not album:
+            exclude_keys = [LIBRARY_ALBUM_KEY, *ignore_keys]
             return AlbumPick(keys=None, exclude_keys=exclude_keys)
-        selected = _indexed_albums(db, folder)
-        if exclude_keys:
-            skip = set(exclude_keys)
-            selected = [(index, row) for index, row in selected if row["media_key"] not in skip]
-        if not selected:
+
+        keys: list[str] = []
+        selected_folders: list[tuple[int, object]] = []
+        if include_library:
+            if db.get_album(LIBRARY_ALBUM_KEY) is None:
+                raise SystemExit("Library is not in the database. Run: gpsync enumerate --library")
+            keys.append(LIBRARY_ALBUM_KEY)
+        if folder is not None:
+            selected_folders = _indexed_albums(db, folder)
+            if ignore_keys:
+                skip = set(ignore_keys)
+                selected_folders = [
+                    (index, row) for index, row in selected_folders if row["media_key"] not in skip
+                ]
+            if not selected_folders and not keys:
+                raise SystemExit("Nothing left to download after --ignore-folder.")
+            if selected_folders:
+                prompt = _folder_confirm_prompt(selected_folders, action)
+                if not _confirm(prompt, assume_yes=assume_yes):
+                    raise SystemExit("Cancelled.")
+                for _index, row in selected_folders:
+                    if row["media_key"] not in keys:
+                        keys.append(row["media_key"])
+        if album:
+            matches = [
+                row for row in db.find_albums(album) if row["media_key"] != LIBRARY_ALBUM_KEY
+            ]
+            if not matches:
+                raise SystemExit(
+                    f"No album matching {album!r}. The Library timeline is `gpsync download --library`."
+                )
+            if len(matches) > 1:
+                names = ", ".join(row["title"] or row["media_key"] for row in matches[:8])
+                raise SystemExit(f"Ambiguous album filter {album!r}: {names}")
+            if matches[0]["media_key"] not in keys:
+                keys.append(matches[0]["media_key"])
+
+        skip = set(ignore_keys)
+        keys = [key for key in keys if key not in skip]
+        if not keys:
             raise SystemExit("Nothing left to download after --ignore-folder.")
-        prompt = _folder_confirm_prompt(selected, action)
-        if not _confirm(prompt, assume_yes=assume_yes):
-            raise SystemExit("Cancelled.")
-        return AlbumPick(keys=[row["media_key"] for _index, row in selected], exclude_keys=[])
+        return AlbumPick(keys=keys, exclude_keys=[])
 
 
 def _indexed_albums(db: Database, indexes: list[int]) -> list[tuple[int, object]]:
-    rows = db.list_album_status()
-    n = len(rows)
-    missing = [index for index in indexes if index < 1 or index > n]
+    numbered = db.numbered_album_status()
+    by_index = {index: row for index, row in numbered}
+    missing = [index for index in indexes if index not in by_index]
     if missing:
-        raise SystemExit(f"No folder #{missing[0]}. `gpsync status` lists 1..{n or 0}.")
-    return [(index, rows[index - 1]) for index in indexes]
+        has_library = 0 in by_index
+        album_max = max((i for i in by_index if i > 0), default=0)
+        if missing[0] == 0 and not has_library:
+            raise SystemExit("No folder #0. Scan the timeline with: gpsync enumerate --library")
+        listed = "0, 1.." + str(album_max) if has_library and album_max else (
+            f"1..{album_max}" if album_max else "nothing yet"
+        )
+        raise SystemExit(f"No folder #{missing[0]}. `gpsync status` lists {listed}.")
+    return [(index, by_index[index]) for index in indexes]
 
 
 def _folder_confirm_prompt(selected: list[tuple[int, object]], action: str) -> str:
@@ -420,14 +473,14 @@ def _print_status(settings) -> None:
         print(format_status_table(rows))
         print()
         print("Use: gpsync download --folder 1,4-6")
-        print("     gpsync download --ignore-folder 2,5")
+        print("     gpsync download --library")
         print("     gpsync ignore --folder 2,5")
 
 
 def format_status_table(rows) -> str:
     """Render numbered album rows for `gpsync status` and `--folder`."""
     records: list[tuple[str, str, str, str, str, str, str]] = []
-    for index, row in enumerate(rows, start=1):
+    for index, row in number_album_rows(rows):
         title = row["title"] or row["media_key"]
         total = int(row["total"] or 0)
         downloaded = int(row["downloaded"] or 0)

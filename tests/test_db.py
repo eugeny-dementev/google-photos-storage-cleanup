@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-from gpsync.db import Database
+from gpsync.db import LIBRARY_ALBUM_KEY, Database
 from gpsync.timestamps import set_file_times
 
 
@@ -50,7 +50,13 @@ def test_album_status_table_and_index(tmp_path: Path) -> None:
         assert db.album_at_index(2)["is_shared"] == 1
         assert db.album_at_index(1)["downloaded"] == 1
         assert db.album_at_index(1)["total"] == 1
+        assert db.album_at_index(0) is None
         assert db.album_at_index(3) is None
+
+        db.upsert_album(LIBRARY_ALBUM_KEY, "Library")
+        db._conn.commit()
+        assert db.album_at_index(0)["media_key"] == LIBRARY_ALBUM_KEY
+        assert db.album_at_index(1)["title"] == "Отпуск 2024"
 
 
 def test_pending_items_respects_size_filters(tmp_path: Path) -> None:

@@ -144,8 +144,12 @@ def download_pending(
                     f"Skipping {ignored} ignored album(s). "
                     "Use `gpsync unignore --folder N` to include them again."
                 )
-        if exclude_album_keys:
-            print(f"Skipping {len(exclude_album_keys)} album(s) from --ignore-folder this run.")
+        exclude = list(exclude_album_keys or [])
+        if LIBRARY_ALBUM_KEY in exclude and db.get_album(LIBRARY_ALBUM_KEY) is not None:
+            print("Skipping library timeline (#0). Use `gpsync download --library` to download it.")
+        extra_ignore = [key for key in exclude if key != LIBRARY_ALBUM_KEY]
+        if extra_ignore:
+            print(f"Skipping {len(extra_ignore)} album(s) from --ignore-folder this run.")
         if total == 0:
             print("Nothing to download.")
             return
@@ -333,7 +337,7 @@ def _download_one(
                 f"({format_bytes(size)}, want {_size_filter_label(options)})"
             )
 
-        existing = _existing_copy(db, row["media_key"], item_id)
+        existing, existing_companion = _existing_copy(db, row["media_key"], item_id)
         if existing:
             existing_size = existing.stat().st_size
             db.update_media_size(row["media_key"], existing_size)
@@ -348,7 +352,18 @@ def _download_one(
             state("c")
             shutil.copy2(existing, dest)
             set_file_times(dest, taken)
-            db.mark_item(item_id, "downloaded", local_path=str(dest), bytes_written=dest.stat().st_size)
+            companion = None
+            if existing_companion is not None:
+                companion = unique_path(album_dir, existing_companion.name)
+                shutil.copy2(existing_companion, companion)
+                set_file_times(companion, taken)
+            db.mark_item(
+                item_id,
+                "downloaded",
+                local_path=str(dest),
+                companion_path=str(companion) if companion else None,
+                bytes_written=dest.stat().st_size,
+            )
             return
 
         rpc_album = None if row["album_key"] == LIBRARY_ALBUM_KEY else row["album_key"]
@@ -447,19 +462,27 @@ def _size_filter_label(options: DownloadOptions) -> str:
     return ", ".join(parts) or "any"
 
 
-def _existing_copy(db: Database, media_key: str, current_id: int) -> Path | None:
+def _existing_copy(db: Database, media_key: str, current_id: int) -> tuple[Path | None, Path | None]:
+    """Same Google photo (media_key) already downloaded in another album or in library."""
     row = db._conn.execute(
         """
-        SELECT local_path FROM album_items
+        SELECT local_path, companion_path FROM album_items
         WHERE media_key = ? AND status = 'downloaded' AND id != ? AND local_path IS NOT NULL
         LIMIT 1
         """,
         (media_key, current_id),
     ).fetchone()
     if not row or not row["local_path"]:
-        return None
+        return None, None
     path = Path(row["local_path"])
-    return path if path.exists() else None
+    if not path.exists():
+        return None, None
+    companion = None
+    if row["companion_path"]:
+        extra = Path(row["companion_path"])
+        if extra.exists():
+            companion = extra
+    return path, companion
 
 
 def _album_dir(

@@ -12,7 +12,8 @@ Use at your own risk. Google's [Terms of Service](https://policies.google.com/te
 
 ## Features
 
-- Every album, including shared ones. The same photo in two albums is saved **twice** (the second copy is taken from disk, not downloaded again).
+- Every album, including shared ones. The same Google photo in two albums (or in Library and an album) is saved **twice**; the second copy is taken from disk, not downloaded again. A duplicate is the same Photos `media_key`, not a similar-looking file.
+- Main Library timeline (photos not in an album, plus archive) lives in a `library/` folder. Scan with `enumerate --library`, download with `download --library`. Plain `gpsync download` skips it (status `#0`).
 - Photos and videos, including items you do not own.
 - Original files: the web UI "Download original" URL (Shift+D), not an API transcode.
 - Original filename (Google metadata or `Content-Disposition`).
@@ -76,6 +77,8 @@ On disk:
 
 ```
 ~/Photos/GooglePhotos/
+  library/
+    IMG_0001.HEIC
   albums/
     Vacation 2024/
       IMG_1234.HEIC
@@ -148,16 +151,17 @@ In the table, `gpsync` means `./gpsync.sh` on Linux/macOS/WSL or `.\gpsync` on W
 | `gpsync logout -y` | Same, no prompt |
 | `gpsync whoami` | Check that the session is alive |
 | `gpsync enumerate` | Walk albums into SQLite |
-| `gpsync enumerate --library` | Also scan the main Library timeline (and archived) |
+| `gpsync enumerate --library` | Scan the main Library timeline (and archived) as status `#0` |
 | `gpsync enumerate --album "Vacation"` | Only albums whose title contains this text |
 | `gpsync enumerate --refresh` | Re-scan albums already in the database (new photos are picked up; download status is kept) |
-| `gpsync download` | Download `pending` / `failed` |
+| `gpsync download` | Download album `pending` / `failed` (skips Library `#0`) |
+| `gpsync download --library` | Download the Library timeline into `library/` |
 | `gpsync download --workers 3` | Parallel HTTP downloads (do not go too high) |
 | `gpsync download --failed-only` | Retry errors only |
 | `gpsync download --limit 20` | Cap this run |
 | `gpsync download --max-size 50M` | Files at most 50MiB |
 | `gpsync download --min-size 50M` | Files at least 50MiB |
-| `gpsync download --folder 10` | Album number from `gpsync status` (asks Y/N) |
+| `gpsync download --folder 10` | Album number from `gpsync status` (asks Y/N). `#0` is Library |
 | `gpsync download --folder 1,4-6,10` | Several albums: commas, `N-M` ranges, no spaces, max 10 |
 | `gpsync download -y --folder 10` | Same, no prompt |
 | `gpsync download --ignore-folder 1,2,4` | Skip those albums this run only (numbers from `gpsync status`) |
@@ -175,9 +179,11 @@ In the table, `gpsync` means `./gpsync.sh` on Linux/macOS/WSL or `.\gpsync` on W
 
 Defaults: `--data-dir gpsync-data`, `--output-dir photos`.
 
-`gpsync status` prints a table. Column `#` is the index for `--folder` / `--ignore-folder` / `gpsync ignore`. Use `1,4,9` or `2-5` or `1,4-6,10` (no spaces). At most 10 albums after ranges are expanded. Album names are quoted. `done/total` is downloaded / rows in the database. `ignore` is `yes` if `gpsync ignore` marked the album. `scanned` is the last enumerate time.
+`gpsync status` prints a table. Column `#` is the index for `--folder` / `--ignore-folder` / `gpsync ignore`. Library (after `enumerate --library`) is **`#0`**. Albums start at `#1`. Use `1,4,9` or `2-5` or `1,4-6,10` (no spaces). At most 10 albums after ranges are expanded. Album names are quoted. `done/total` is downloaded / rows in the database. `ignore` is `yes` if `gpsync ignore` marked the album. `scanned` is the last enumerate time.
 
-`gpsync download` without `--folder` / `--album` skips permanently ignored albums. `--folder` or `--album` still downloads them. `--ignore-folder` skips extra albums for that run only and does not write SQLite. Combine with `--folder`: `gpsync download --folder 1-10 --ignore-folder 3,5`.
+Plain `gpsync download` skips `#0`. `gpsync download --library` downloads only the timeline (you can combine with `--folder` to also take albums). Duplicates: the same Photos item has one `media_key`. If that key is already `downloaded` in another album or in `library/` and the file is still on disk, the next place gets a copy (`c` in the progress line), not a second HTTP download. Two different photos that only look alike are different keys and both download.
+
+`gpsync download` without `--folder` / `--album` / `--library` also skips permanently ignored albums. `--folder` or `--album` still download them. `--ignore-folder` skips extra albums for that run only and does not write SQLite. Combine with `--folder`: `gpsync download --folder 1-10 --ignore-folder 3,5`.
 
 `--date-prefix` is off unless you pass the flag. File times use `HH.MM`, not `HH:MM` (`:` is illegal in Windows names). The album date is the earliest capture in that album.
 
@@ -185,7 +191,7 @@ Defaults: `--data-dir gpsync-data`, `--output-dir photos`.
 
 `--pause` spaces out when each file starts. With `--workers` greater than 1, transfers can still overlap; use `--workers 1 --pause 1-5` for a gap after each file finishes before the next starts.
 
-`--fix-time` does not download. It walks `downloaded` rows in SQLite and sets each file's mtime (and Windows creation time) to the capture date from enumerate. It uses the stored `local_path` (and Live Photo companion path), so names from `--date-prefix` are found. `--folder` / `--album` / `--ignore-folder` limit which albums; `--pause`, `--workers`, size filters, and `--date-prefix` are ignored. Permanently ignored albums are skipped unless you pass `--folder` or `--album`.
+`--fix-time` does not download. It walks `downloaded` rows in SQLite and sets each file's mtime (and Windows creation time) to the capture date from enumerate. It uses the stored `local_path` (and Live Photo companion path), so names from `--date-prefix` are found. `--folder` / `--album` / `--library` / `--ignore-folder` limit which albums; `--pause`, `--workers`, size filters, and `--date-prefix` are ignored. Permanently ignored albums are skipped unless you pass `--folder` or `--album`. Plain `--fix-time` skips Library `#0` unless you pass `--library`.
 
 **Ctrl+C** stops `gpsync download` and `gpsync enumerate`. Files already written and SQLite are kept; in-progress transfers are dropped and stay `pending`. Run the same command again to resume.
 

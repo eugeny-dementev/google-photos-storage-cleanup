@@ -4,7 +4,7 @@ import pytest
 
 from gpsync.cli import _resolve_download_albums, format_status_table
 from gpsync.config import Settings
-from gpsync.db import Database
+from gpsync.db import LIBRARY_ALBUM_KEY, Database
 
 
 def test_status_table_quotes_names_and_numbers_rows() -> None:
@@ -42,6 +42,37 @@ def test_status_table_quotes_names_and_numbers_rows() -> None:
     assert "no" in lines[3]
 
 
+def test_status_table_library_is_folder_zero() -> None:
+    rows = [
+        {
+            "media_key": LIBRARY_ALBUM_KEY,
+            "title": "Library",
+            "is_shared": 0,
+            "enumerated_at": "2026-08-29 14:22:01",
+            "total": 10,
+            "downloaded": 1,
+            "failed": 0,
+            "ignored": 0,
+        },
+        {
+            "media_key": "a",
+            "title": "Отпуск",
+            "is_shared": 0,
+            "enumerated_at": None,
+            "total": 2,
+            "downloaded": 0,
+            "failed": 0,
+            "ignored": 0,
+        },
+    ]
+    table = format_status_table(rows)
+    lines = table.splitlines()
+    assert lines[2].lstrip().startswith("0")
+    assert '"Library"' in lines[2]
+    assert lines[3].lstrip().startswith("1")
+    assert '"Отпуск"' in lines[3]
+
+
 def test_folder_index_confirm_yes(tmp_path: Path) -> None:
     db_path = tmp_path / "photos.db"
     with Database(db_path) as db:
@@ -58,6 +89,9 @@ def test_folder_index_confirm_yes(tmp_path: Path) -> None:
     key = _resolve_download_albums(settings, album=None, folder=[1], assume_yes=True)
     assert key.keys == ["alb"]
     assert key.exclude_keys == []
+    default = _resolve_download_albums(settings, album=None, folder=None, assume_yes=True)
+    assert default.keys is None
+    assert default.exclude_keys == [LIBRARY_ALBUM_KEY]
     with pytest.raises(SystemExit, match="No folder #9"):
         _resolve_download_albums(settings, album=None, folder=[9], assume_yes=True)
     with pytest.raises(SystemExit, match="either --folder"):
@@ -111,7 +145,7 @@ def test_ignore_folder_excludes_this_run(tmp_path: Path) -> None:
         settings, album=None, folder=None, ignore_folder=[1, 3], assume_yes=True
     )
     assert skipped.keys is None
-    assert skipped.exclude_keys == ["a", "c"]
+    assert skipped.exclude_keys == [LIBRARY_ALBUM_KEY, "a", "c"]
     mixed = _resolve_download_albums(
         settings, album=None, folder=[1, 2, 3], ignore_folder=[2], assume_yes=True
     )
@@ -143,3 +177,47 @@ def test_ignore_unignore_cli(tmp_path: Path) -> None:
     assert main([*argv, "unignore", "-y", "--all"]) == 0
     with Database(db_path) as db:
         assert db.get_album("a")["ignored"] == 0
+
+
+def test_library_folder_zero_and_download_flag(tmp_path: Path) -> None:
+    db_path = tmp_path / "photos.db"
+    with Database(db_path) as db:
+        db.upsert_album(LIBRARY_ALBUM_KEY, "Library")
+        db.upsert_album("a", "Alpha")
+        db.upsert_media("m1", file_name="a.jpg")
+        db.add_album_item("a", "m1")
+        db._conn.commit()
+    settings = Settings(
+        data_dir=tmp_path,
+        output_dir=tmp_path / "photos",
+        cookies_path=tmp_path / "cookies.txt",
+        db_path=db_path,
+    )
+    assert _resolve_download_albums(
+        settings, album=None, folder=[0], assume_yes=True
+    ).keys == [LIBRARY_ALBUM_KEY]
+    assert _resolve_download_albums(
+        settings, album=None, folder=[1], assume_yes=True
+    ).keys == ["a"]
+    lib = _resolve_download_albums(
+        settings, album=None, folder=None, include_library=True, assume_yes=True
+    )
+    assert lib.keys == [LIBRARY_ALBUM_KEY]
+    both = _resolve_download_albums(
+        settings, album=None, folder=[1], include_library=True, assume_yes=True
+    )
+    assert both.keys == [LIBRARY_ALBUM_KEY, "a"]
+    empty = tmp_path / "nolib.db"
+    with Database(empty) as db:
+        db.upsert_album("only", "Only")
+        db._conn.commit()
+    nolib = Settings(
+        data_dir=tmp_path,
+        output_dir=tmp_path / "photos",
+        cookies_path=tmp_path / "cookies.txt",
+        db_path=empty,
+    )
+    with pytest.raises(SystemExit, match="No folder #0"):
+        _resolve_download_albums(nolib, album=None, folder=[0], assume_yes=True)
+    with pytest.raises(SystemExit, match="enumerate --library"):
+        _resolve_download_albums(nolib, album=None, folder=None, include_library=True, assume_yes=True)

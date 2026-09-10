@@ -66,6 +66,19 @@ CREATE TABLE IF NOT EXISTS meta (
 LIBRARY_ALBUM_KEY = "__library__"
 
 
+def number_album_rows(rows) -> list[tuple[int, object]]:
+    """Library timeline is #0. Real albums are 1, 2, 3... in `gpsync status` order."""
+    numbered: list[tuple[int, object]] = []
+    next_index = 1
+    for row in rows:
+        if row["media_key"] == LIBRARY_ALBUM_KEY:
+            numbered.append((0, row))
+        else:
+            numbered.append((next_index, row))
+            next_index += 1
+    return numbered
+
+
 @dataclass
 class StatusCounts:
     albums: int
@@ -249,11 +262,14 @@ class Database:
             )
         )
 
+    def numbered_album_status(self) -> list[tuple[int, sqlite3.Row]]:
+        return number_album_rows(self.list_album_status())
+
     def album_at_index(self, index: int) -> sqlite3.Row | None:
-        rows = self.list_album_status()
-        if index < 1 or index > len(rows):
-            return None
-        return rows[index - 1]
+        for number, row in self.numbered_album_status():
+            if number == index:
+                return row
+        return None
 
     def get_album(self, media_key: str) -> sqlite3.Row | None:
         return self._conn.execute("SELECT * FROM albums WHERE media_key = ?", (media_key,)).fetchone()

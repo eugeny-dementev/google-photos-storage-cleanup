@@ -123,7 +123,9 @@ def test_parse_size_and_format_bytes() -> None:
 
 
 def test_parse_folder_spec() -> None:
+    assert parse_folder_spec("0") == [0]
     assert parse_folder_spec("3") == [3]
+    assert parse_folder_spec("0,1,4") == [0, 1, 4]
     assert parse_folder_spec("1,4,9") == [1, 4, 9]
     assert parse_folder_spec("2-5") == [2, 3, 4, 5]
     assert parse_folder_spec("1,4-6,10") == [1, 4, 5, 6, 10]

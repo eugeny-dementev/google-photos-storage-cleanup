@@ -10,7 +10,8 @@
 
 ## Что умеет
 
-- Все альбомы, в том числе shared. Одна и та же фотография в двух альбомах сохраняется **дважды** (во второй раз копируется с диска, без повторной загрузки).
+- Все альбомы, в том числе shared. Одна и та же фотография Google в двух альбомах (или в Library и в альбоме) сохраняется **дважды**; второй раз копируется с диска. Дубликат - это тот же `media_key` в Photos, а не "похожее" фото.
+- Основная лента Library (фото не в альбоме, плюс архив) лежит в папке `library/`. Сканировать: `enumerate --library`, качать: `download --library`. Обычный `gpsync download` её не трогает (в status это `#0`).
 - Фото и видео, в том числе те, где вы не владелец.
 - Оригинал: URL "Download original" из веб-UI (аналог Shift+D), не транскод API.
 - Имя файла как у оригинала (из метаданных Google или `Content-Disposition`).
@@ -74,6 +75,8 @@ python -m venv .venv
 
 ```
 ~/Photos/GooglePhotos/
+  library/
+    IMG_0001.HEIC
   albums/
     Отпуск 2024/
       IMG_1234.HEIC
@@ -146,16 +149,17 @@ gpsync logout
 | `gpsync logout -y` | То же без вопроса |
 | `gpsync whoami` | Проверить, что сессия жива |
 | `gpsync enumerate` | Собрать альбомы и элементы в SQLite |
-| `gpsync enumerate --library` | Плюс основная лента Library (и archived) |
+| `gpsync enumerate --library` | Сканировать основную ленту Library (и archived) как `#0` |
 | `gpsync enumerate --album "Отпуск"` | Только альбомы с таким фрагментом названия |
 | `gpsync enumerate --refresh` | Пересканировать уже обойденные альбомы (новые фото подхватятся, статусы скачивания не сбросятся) |
-| `gpsync download` | Скачать `pending` / `failed` |
+| `gpsync download` | Скачать `pending` / `failed` альбомов (ленту `#0` пропускает) |
+| `gpsync download --library` | Скачать ленту Library в папку `library/` |
 | `gpsync download --workers 3` | Параллельные HTTP-загрузки (не ставьте слишком много) |
 | `gpsync download --failed-only` | Только ошибки |
 | `gpsync download --limit 20` | Ограничить пачку |
 | `gpsync download --max-size 50M` | Только файлы не больше 50MiB |
 | `gpsync download --min-size 50M` | Только файлы не меньше 50MiB |
-| `gpsync download --folder 10` | Альбом с таким номером в `gpsync status` (спросит Y/N) |
+| `gpsync download --folder 10` | Альбом с таким номером в `gpsync status` (спросит Y/N). `#0` - это Library |
 | `gpsync download --folder 1,4-6,10` | Несколько альбомов: запятые, диапазоны `N-M`, без пробелов, максимум 10 |
 | `gpsync download -y --folder 10` | То же без вопроса |
 | `gpsync download --ignore-folder 1,2,4` | Не качать эти альбомы только в этом запуске (номера из `gpsync status`) |
@@ -173,9 +177,11 @@ gpsync logout
 
 Пути по умолчанию: `--data-dir gpsync-data`, `--output-dir photos`.
 
-`gpsync status` рисует таблицу. Колонка `#` - номер для `--folder` / `--ignore-folder` / `gpsync ignore`. Можно `1,4,9`, `2-5` или `1,4-6,10` (без пробелов). После раскрытия диапазонов не больше 10 альбомов. Имена альбомов в кавычках, `done/total` - скачано / всего в базе, `ignore` - `yes` если альбом помечен через `gpsync ignore`, `scanned` - время последнего `enumerate`.
+`gpsync status` рисует таблицу. Колонка `#` - номер для `--folder` / `--ignore-folder` / `gpsync ignore`. Лента Library (после `enumerate --library`) - это **`#0`**. Альбомы с `#1`. Можно `1,4,9`, `2-5` или `1,4-6,10` (без пробелов). После раскрытия диапазонов не больше 10 альбомов. Имена альбомов в кавычках, `done/total` - скачано / всего в базе, `ignore` - `yes` если альбом помечен через `gpsync ignore`, `scanned` - время последнего `enumerate`.
 
-`gpsync download` без `--folder` / `--album` пропускает альбомы с постоянным ignore. `--folder` или `--album` качают их всё равно. `--ignore-folder` пропускает альбомы только в этом запуске и SQLite не меняет. Можно вместе с `--folder`: `gpsync download --folder 1-10 --ignore-folder 3,5`.
+Обычный `gpsync download` не качает `#0`. `gpsync download --library` качает только ленту (можно вместе с `--folder`, если нужны ещё альбомы). Дубликаты: один и тот же объект Photos имеет один `media_key`. Если этот ключ уже `downloaded` в другом альбоме или в `library/` и файл на диске есть, во второе место копируется с диска (буква `c` в прогрессе), без второго HTTP. Два разных кадра, которые только похожи, - разные ключи, качаются оба.
+
+`gpsync download` без `--folder` / `--album` / `--library` также пропускает альбомы с постоянным ignore. `--folder` или `--album` качают их всё равно. `--ignore-folder` пропускает альбомы только в этом запуске и SQLite не меняет. Можно вместе с `--folder`: `gpsync download --folder 1-10 --ignore-folder 3,5`.
 
 `--date-prefix` по умолчанию выключен. Для файлов время идёт как `HH.MM`, а не `HH:MM`: двоеточие нельзя в имени файла на Windows. Дата папки - съёмка самого раннего файла в альбоме.
 
@@ -183,7 +189,7 @@ gpsync logout
 
 `--pause` разносит момент старта каждого файла. Если `--workers` больше 1, загрузки всё ещё могут идти параллельно; для паузы после каждого файла: `--workers 1 --pause 1-5`.
 
-`--fix-time` ничего не качает. Берёт уже скачанные строки из SQLite и ставит mtime (на Windows ещё creation time) по дате съёмки из enumerate. Путь берётся из `local_path` в базе (и companion у Live Photo), поэтому файлы, скачанные с `--date-prefix`, находятся. `--folder` / `--album` / `--ignore-folder` ограничивают альбомы; `--pause`, `--workers`, фильтры размера и `--date-prefix` игнорируются. Альбомы с постоянным ignore пропускаются, если не указаны `--folder` или `--album`.
+`--fix-time` ничего не качает. Берёт уже скачанные строки из SQLite и ставит mtime (на Windows ещё creation time) по дате съёмки из enumerate. Путь берётся из `local_path` в базе (и companion у Live Photo), поэтому файлы, скачанные с `--date-prefix`, находятся. `--folder` / `--album` / `--library` / `--ignore-folder` ограничивают альбомы; `--pause`, `--workers`, фильтры размера и `--date-prefix` игнорируются. Альбомы с постоянным ignore пропускаются, если не указаны `--folder` или `--album`. Обычный `--fix-time` не трогает ленту `#0`, пока не передать `--library`.
 
 **Ctrl+C** останавливает `gpsync download` и `gpsync enumerate`. Уже записанные файлы и SQLite остаются; незавершённая загрузка сбрасывается и элемент остаётся `pending`. Повторите ту же команду, чтобы продолжить.
 

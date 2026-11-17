@@ -172,3 +172,11 @@ Run the ten-item pilot first. Check confirmations before continuing with --limit
 Use `tail -n 30 -f scan.log` to observe logs on macOS.
 Use `tail -n 30 -f scan-errors.log` in another terminal for errors.
 Git ignores session cookies, browser profiles, inventory databases, reports, and logs.
+
+For macOS installations where bundled Chromium cannot access the configured proxy, use the installed Chrome app with an isolated profile:
+
+```sh
+GPSYNC_BROWSER_CHANNEL=chrome .venv/bin/python -u -m gpsync login --wait-file gpsync-data/login-ready
+```
+
+The private profile still lives in this installation; it never opens the normal Chrome profile.

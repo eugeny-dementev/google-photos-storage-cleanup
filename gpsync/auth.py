@@ -139,6 +139,7 @@ def login_with_browser(settings: Settings, ready_file: Path | None = None) -> No
             context = playwright.chromium.launch_persistent_context(
                 user_data_dir=str(profile_dir),
                 headless=False,
+                channel=os.environ.get("GPSYNC_BROWSER_CHANNEL") or None,
                 proxy=browser_proxy,
                 viewport={"width": 1280, "height": 800},
                 args=launch_args,

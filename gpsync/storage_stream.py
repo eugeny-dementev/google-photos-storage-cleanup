@@ -121,3 +121,4 @@ def stream(args,settings,db):
     finally:
         report(db,scan,settings)
         (directory/'quota-after.json').write_text(json.dumps({'quota':quota(c),'confirmed_this_run':moved,'savings_status':'pending_server_accounting'}))
+    return 0

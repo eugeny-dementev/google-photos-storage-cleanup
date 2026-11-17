@@ -99,7 +99,7 @@ def clear_session_secrets(settings: Settings) -> list[Path]:
     return removed
 
 
-def login_with_browser(settings: Settings) -> None:
+def login_with_browser(settings: Settings, ready_file: Path | None = None) -> None:
     try:
         from playwright.sync_api import Error as PlaywrightError
         from playwright.sync_api import sync_playwright
@@ -112,22 +112,82 @@ def login_with_browser(settings: Settings) -> None:
     settings.ensure_dirs()
     profile_dir = settings.browser_profile_dir
     print("Opening Chromium. Log in to Google Photos in the window.")
-    print("When you see your library at https://photos.google.com/, return here and press Enter.")
+    if ready_file is None:
+        print("When you see your library at https://photos.google.com/, return here and press Enter.")
+    else:
+        print("Waiting for login confirmation from the controlling session.", flush=True)
+
+    browser_proxy = None
+    network = settings.data_dir / 'network.json'
+    if network.exists():
+        import json
+        from urllib.parse import urlsplit, unquote
+        url = urlsplit(json.loads(network.read_text())['proxy'])
+        browser_proxy = {'server': f'{url.scheme}://{url.hostname}:{url.port}'}
+        if url.username: browser_proxy['username'] = unquote(url.username)
+        if url.password: browser_proxy['password'] = unquote(url.password)
+
+    extension = settings.data_dir / 'extensions' / 'proxy-switcher'
+    launch_args = ["--disable-blink-features=AutomationControlled"]
+    if extension.is_dir():
+        extension = extension.resolve()
+        launch_args += [f"--disable-extensions-except={extension}", f"--load-extension={extension}"]
+        browser_proxy = None
 
     with sync_playwright() as playwright:
         try:
             context = playwright.chromium.launch_persistent_context(
                 user_data_dir=str(profile_dir),
                 headless=False,
+                proxy=browser_proxy,
                 viewport={"width": 1280, "height": 800},
-                args=["--disable-blink-features=AutomationControlled"],
+                args=launch_args,
+                ignore_default_args=["--disable-extensions"] if extension.is_dir() else None,
             )
         except PlaywrightError as exc:
             _reraise_playwright_launch_error(exc)
+        if extension.is_dir():
+            workers = context.service_workers
+            worker = next((w for w in workers if "onnfghpihccifgojkpnnncpagjcdbjod" in w.url), None)
+            if worker is None:
+                worker = context.wait_for_event("serviceworker", timeout=30000)
+            worker.evaluate("""async () => {
+                const prefs = await chrome.storage.local.get(null);
+                const imported = {value: {mode: 'fixed_servers', rules: {singleProxy: {scheme: 'socks5', host: '127.0.0.1', port: 1180}, bypassList: ['<local>']}}};
+                const name = 'VLESS SOCKS';
+                await chrome.storage.local.set({
+                    profiles: [...new Set([...(prefs.profiles || []), name])],
+                    ['profile.' + name]: imported,
+                    'last-manual': name, 'startup-proxy': 'no'
+                });
+                const value = {mode: imported.value.mode, rules: imported.value.rules};
+                await new Promise((resolve, reject) => chrome.proxy.settings.set({value, scope: 'regular'}, () => {
+                    if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message)); else resolve();
+                }));
+            }""")
+            config = worker.evaluate("() => new Promise(resolve => chrome.proxy.settings.get({}, result => resolve(result.value)))")
+            network = settings.data_dir / 'network.json'
+            import json
+            rules = config.get('rules', {})
+            endpoint = rules.get('singleProxy') or rules.get('proxyForHttps') or rules.get('proxyForHttp')
+            if not endpoint or endpoint.get('scheme') not in ('socks5', 'http', 'https'):
+                raise RuntimeError('Imported proxy configuration is not supported by the scanner')
+            scheme = 'socks5h' if endpoint['scheme'] == 'socks5' else endpoint['scheme']
+            saved = json.loads(network.read_text()) if network.exists() else {}
+            saved['browser_proxy'] = f"{scheme}://{endpoint['host']}:{endpoint['port']}"
+            network.write_text(json.dumps(saved))
+            print('Imported Chrome proxy profile selected: VLESS SOCKS', flush=True)
         page = context.pages[0] if context.pages else context.new_page()
         page.goto("https://photos.google.com/", wait_until="domcontentloaded")
         try:
-            sys.stdin.readline()
+            if ready_file is None:
+                sys.stdin.readline()
+            else:
+                while not ready_file.exists():
+                    if not context.pages:
+                        raise RuntimeError("Login browser closed before confirmation")
+                    context.pages[0].wait_for_timeout(1000)
+                ready_file.unlink()
         except KeyboardInterrupt:
             context.close()
             raise

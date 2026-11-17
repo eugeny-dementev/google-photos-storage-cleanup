@@ -1,0 +1,3 @@
+https://github.com/trialuser/google-photos-sync
+44c31feecc57ea6bc18b019f643a0ecdc0e5c294
+Isolated extension; original installation unchanged.

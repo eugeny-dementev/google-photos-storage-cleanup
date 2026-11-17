@@ -1,3 +1,9 @@
+# Google Photos Storage Cleanup
+
+Independent fork with account-bound storage cleanup. See [STORAGE-CLEANUP.md](STORAGE-CLEANUP.md) for safety rules and commands.
+
+The original downloader remains available below.
+
 # Google Photos Sync
 
 **English:** this file | **Русский:** [docs/README.ru.md](docs/README.ru.md)

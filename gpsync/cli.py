@@ -83,6 +83,8 @@ def main(argv: list[str] | None = None) -> int:
     login = sub.add_parser("login", help="Log in via Chromium and save cookies")
     login.add_argument("--cookies", type=Path, help="Import an existing Netscape cookies.txt instead")
 
+    login.add_argument("--wait-file", type=Path, help="Export cookies after this confirmation file appears; useful over SSH")
+
     logout = sub.add_parser(
         "logout",
         help="Delete cookies and Chromium profile; keep SQLite and downloaded files",
@@ -167,6 +169,9 @@ def main(argv: list[str] | None = None) -> int:
     verify = sub.add_parser("verify", help="Check downloaded files still exist")
     verify.add_argument("--reset", action="store_true", help="Mark missing files as pending")
 
+    from gpsync.storage import add_commands
+    add_commands(sub)
+
     args = parser.parse_args(argv)
     assume_yes = bool(getattr(args, "yes", False))
     settings = load_settings(
@@ -177,6 +182,9 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     try:
+        if args.command == "storage":
+            from gpsync.storage import run
+            return run(args, settings)
         if args.command == "init":
             settings.output_dir = args.output
             settings.save()
@@ -189,7 +197,10 @@ def main(argv: list[str] | None = None) -> int:
                 import_cookies_txt(args.cookies, settings.cookies_path)
                 print(f"Imported cookies to {settings.cookies_path}")
             else:
-                login_with_browser(settings)
+                if args.wait_file:
+                    login_with_browser(settings, ready_file=args.wait_file)
+                else:
+                    login_with_browser(settings)
             settings.save()
             return 0
         if args.command == "logout":

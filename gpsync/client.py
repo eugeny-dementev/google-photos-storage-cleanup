@@ -55,12 +55,15 @@ def _new_session() -> requests.Session:
 class PhotosClient:
     """Client for the same PhotosUi/batchexecute RPCs that photos.google.com uses."""
 
-    def __init__(self, cookies_txt: Path, account_index: int = 0, pause_s: float = 0.15) -> None:
+    def __init__(self, cookies_txt: Path, account_index: int = 0, pause_s: float = 0.15, *, proxy: str | None = None) -> None:
         self.cookies_txt = Path(cookies_txt)
         self.account_index = account_index
         self.pause_s = pause_s
         self.base_path = f"/u/{account_index}/" if account_index else "/"
         self.session = _new_session()
+        if proxy:
+            self.session.trust_env = False
+            self.session.proxies.update({'http': proxy, 'https': proxy})
         self._load_cookies()
         self.global_data = self._load_global_data()
         self.email = self.global_data.get("oPEP7c")

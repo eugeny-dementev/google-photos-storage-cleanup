@@ -32,3 +32,13 @@ cookies.txt
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Cleanup runtime and private review artifacts
+*.log
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+ui-evidence*.json
+network.json
+account.json
+login-ready

@@ -184,3 +184,8 @@ The private profile still lives in this installation; it never opens the normal 
 network.json may set browser_proxy separately from proxy.
 Use a socks5 or socks5h URL for browser_proxy when login requires the VLESS SOCKS route.
 The scanner continues to use proxy; browser login cannot replace that setting.
+
+In incremental write mode, confirmed externally owned and unknown-ownership items are preserved immediately.
+Their detailed storage metadata is marked as not requested, rather than reported as free.
+Read-only streaming still fetches detailed metadata for all items.
+Every potentially eligible owned item retains all original metadata, storage, alias, and album checks.

@@ -44,3 +44,23 @@ def test_stream_mutates_before_exhausting_library_and_never_retries(tmp_path,mon
     assert calls[0]['allow_redirects'] is False
     db=connect(settings)
     assert db.execute('select state from journal order by rowid desc').fetchone()[0]==('uncertain' if timeout else 'confirmed')
+
+
+def test_write_mode_preserves_foreign_item_without_detail_requests(tmp_path,monkeypatch):
+    settings=load_settings(data_dir=tmp_path)
+    lib=['foreign',None,1,'dedup',0,1,None,[[27]]]
+    methods=[]
+    def rpc(method,args,**kw):
+        methods.append(method)
+        if method=='lcxiM':return [[lib],None,None]
+        if method=='EzwWhf':return []
+        pytest.fail('Foreign item must not trigger detail or Trash request: '+method)
+    client=SimpleNamespace(email='self@example.test',rpc=rpc)
+    monkeypatch.setattr('gpsync.storage.checked_client',lambda *a:client)
+    monkeypatch.setattr('gpsync.storage.membership',lambda *a:AlbumIndex())
+    args=SimpleNamespace(storage_command='stream',expect_account=client.email,write=True,limit=10,resume=None)
+    assert run(args,settings)==0
+    db=connect(settings);item=json.loads(db.execute('select payload from items').fetchone()[0])
+    assert item['decision']=='other_owner'
+    assert item['takes_space'] is None and item['charged_bytes'] is None
+    assert db.execute('select count(*) from journal').fetchone()[0]==0

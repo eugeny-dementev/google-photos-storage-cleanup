@@ -83,6 +83,15 @@ def stream(args,settings,db):
                 base=dict(media_key=key,dedup_key=parsed.dedup_key,is_owned=owned(row),created_ts=parsed.creation_timestamp,
                     archived=parsed.is_archived,is_video=parsed.video_duration is not None,is_live_photo=parsed.is_live_photo,
                     partial_upload=safe_get(row,12,0)==20)
+                if args.write and base['is_owned'] is not True:
+                    item={**base, 'takes_space':None, 'charged_bytes':None, 'quality_code':None,
+                        'albums':sorted(index.get(key,set())),
+                        'decision':'other_owner' if base['is_owned'] is False else 'unknown_owner',
+                        'provenance':'lcxiM ownership flags; remaining metadata not requested for protected write-mode item'}
+                    db.execute('insert or replace into items values(?,?,?)',(scan,key,json.dumps(item)));db.commit();checked+=1
+                    print(json.dumps({'checked':checked,'media_key':key,'owned':base['is_owned'],
+                        'decision':item['decision'],'action':'PRESERVED_WITHOUT_DETAIL_REQUESTS'}),flush=True)
+                    continue
                 item=enrich(base,c.rpc('fDcn4b',[key,1,None,None,1],parse=False),index)
                 item=crosscheck(item,c.rpc('VrseUb',[key,None,None,None,None],parse=False))
                 db.execute('insert or replace into items values(?,?,?)',(scan,key,json.dumps(item)));db.commit();checked+=1

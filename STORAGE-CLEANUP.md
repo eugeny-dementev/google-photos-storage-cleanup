@@ -180,3 +180,7 @@ GPSYNC_BROWSER_CHANNEL=chrome .venv/bin/python -u -m gpsync login --wait-file gp
 ```
 
 The private profile still lives in this installation; it never opens the normal Chrome profile.
+
+network.json may set browser_proxy separately from proxy.
+Use a socks5 or socks5h URL for browser_proxy when login requires the VLESS SOCKS route.
+The scanner continues to use proxy; browser login cannot replace that setting.

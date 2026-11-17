@@ -122,8 +122,10 @@ def login_with_browser(settings: Settings, ready_file: Path | None = None) -> No
     if network.exists():
         import json
         from urllib.parse import urlsplit, unquote
-        url = urlsplit(json.loads(network.read_text())['proxy'])
-        browser_proxy = {'server': f'{url.scheme}://{url.hostname}:{url.port}'}
+        network_settings = json.loads(network.read_text())
+        url = urlsplit(network_settings.get('browser_proxy') or network_settings['proxy'])
+        scheme = 'socks5' if url.scheme == 'socks5h' else url.scheme
+        browser_proxy = {'server': f'{scheme}://{url.hostname}:{url.port}'}
         if url.username: browser_proxy['username'] = unquote(url.username)
         if url.password: browser_proxy['password'] = unquote(url.password)
 

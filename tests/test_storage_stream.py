@@ -40,6 +40,7 @@ def test_stream_mutates_before_exhausting_library_and_never_retries(tmp_path,mon
     assert run(args,settings)==0
     assert len(calls)==1
     assert calls[0]['allow_redirects'] is False
+    assert not list((settings.data_dir/'reports').glob('*/checkpoint.json')), 'Partial page must not advance checkpoint'
     db=connect(settings)
     assert db.execute('select state from journal order by rowid desc').fetchone()[0]=='confirmed'
 
@@ -68,7 +69,7 @@ def test_sparse_page_keeps_cursor_and_last_timestamp():
     from gpsync.storage_stream import read_library_page
     assert read_library_page([None,'next'],123)==([], 'next',123)
     assert read_library_page([None,None],123)==([],None,123)
-    for malformed in [None,{},[None],['invalid','next'],[None,42]]:
+    for malformed in [None,{},['invalid','next'],[None,42]]:
         with pytest.raises(ValueError):read_library_page(malformed,123)
 
 
@@ -152,3 +153,76 @@ def test_album_items_skip_detail_requests_but_remain_protected(tmp_path,monkeypa
     db=connect(settings)
     assert json.loads(db.execute('select payload from items').fetchone()[0])['decision']=='album_protected'
     assert db.execute('select count(*) from journal').fetchone()[0]==0
+
+
+def test_final_page_without_cursor_keeps_its_items():
+    from gpsync.storage_stream import read_library_page
+    row=['last-photo']
+    assert read_library_page([[row]],123)==([row],None,123)
+    assert read_library_page([[]],123)==([],None,123)
+    assert read_library_page([],123)==([],None,123)
+
+
+def test_stream_rechecks_and_processes_short_final_page(tmp_path,monkeypatch):
+    settings=load_settings(data_dir=tmp_path);row=['last',None,1,'d',0,1,None,[[27]]];reads=[]
+    def rpc(method,args,**kw):
+        if method=='EzwWhf':return []
+        assert method=='lcxiM';reads.append(args);return [[row]]
+    monkeypatch.setattr('gpsync.storage.checked_client',lambda *a:SimpleNamespace(email='self@example.test',rpc=rpc))
+    monkeypatch.setattr('gpsync.storage.membership',lambda *a:AlbumIndex())
+    assert run(SimpleNamespace(storage_command='stream',expect_account='self@example.test',write=True,limit=0,resume=None),settings)==0
+    assert len(reads)==2
+    db=connect(settings);assert db.execute('select key from items').fetchall()==[('last',)]
+    scan=db.execute('select id from scans').fetchone()[0]
+    checkpoint=json.loads((settings.data_dir/'reports'/scan/'checkpoint.json').read_text())
+    assert checkpoint['complete'] is True
+
+
+def test_resume_uses_checkpoint_and_does_not_skip_next_page(tmp_path,monkeypatch):
+    from gpsync.storage_stream import save_checkpoint
+    settings=load_settings(data_dir=tmp_path);db=connect(settings)
+    db.execute('insert into scans values(?,?,?,NULL)',('job','self@example.test','streaming'));db.commit()
+    directory=settings.data_dir/'reports/job';directory.mkdir(parents=True)
+    save_checkpoint(directory/'checkpoint.json','job','self@example.test','saved-next',123)
+    reads=[]
+    def rpc(method,args,**kw):
+        if method=='EzwWhf':return []
+        reads.append(args);return [[],None]
+    monkeypatch.setattr('gpsync.storage.checked_client',lambda *a:SimpleNamespace(email='self@example.test',rpc=rpc))
+    monkeypatch.setattr('gpsync.storage.membership',lambda *a:AlbumIndex())
+    assert run(SimpleNamespace(storage_command='stream',expect_account='self@example.test',write=True,limit=0,resume='job'),settings)==0
+    assert reads==[['saved-next',123,100,None,1,3]]
+    assert db.execute('select state from scans').fetchone()[0]=='stream_complete'
+
+
+def test_checkpoint_account_mismatch_blocks_library_reads(tmp_path,monkeypatch):
+    from gpsync.storage_stream import save_checkpoint
+    settings=load_settings(data_dir=tmp_path);db=connect(settings)
+    db.execute('insert into scans values(?,?,?,NULL)',('job','self@example.test','streaming'));db.commit()
+    directory=settings.data_dir/'reports/job';directory.mkdir(parents=True)
+    save_checkpoint(directory/'checkpoint.json','job','other@example.test','next',123)
+    def rpc(method,*a,**kw):
+        assert method=='EzwWhf','Library access must remain blocked';return []
+    monkeypatch.setattr('gpsync.storage.checked_client',lambda *a:SimpleNamespace(email='self@example.test',rpc=rpc))
+    monkeypatch.setattr('gpsync.storage.membership',lambda *a:AlbumIndex())
+    with pytest.raises(ValueError,match='identity mismatch'):
+        run(SimpleNamespace(storage_command='stream',expect_account='self@example.test',write=True,limit=0,resume='job'),settings)
+
+
+def test_invalid_saved_cursor_restarts_without_skipping(tmp_path,monkeypatch):
+    from gpsync.storage_stream import save_checkpoint
+    from gpsync.client import PhotosApiError
+    settings=load_settings(data_dir=tmp_path);db=connect(settings)
+    db.execute('insert into scans values(?,?,?,NULL)',('job','self@example.test','streaming'));db.commit()
+    directory=settings.data_dir/'reports/job';directory.mkdir(parents=True)
+    save_checkpoint(directory/'checkpoint.json','job','self@example.test','expired',123)
+    reads=[]
+    def rpc(method,args,**kw):
+        if method=='EzwWhf':return []
+        reads.append(args)
+        if args[0]=='expired':raise PhotosApiError('Old cursor rejected')
+        return [[],None]
+    monkeypatch.setattr('gpsync.storage.checked_client',lambda *a:SimpleNamespace(email='self@example.test',rpc=rpc))
+    monkeypatch.setattr('gpsync.storage.membership',lambda *a:AlbumIndex())
+    assert run(SimpleNamespace(storage_command='stream',expect_account='self@example.test',write=True,limit=0,resume='job'),settings)==0
+    assert [r[0] for r in reads]==['expired',None]

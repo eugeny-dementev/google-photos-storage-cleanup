@@ -2,6 +2,7 @@
 import json
 import time
 import uuid
+import os
 from gpsync.client import _extract_wrb_payload, PhotosApiError
 from gpsync.parser import MediaItem
 from gpsync.util import safe_get
@@ -41,14 +42,22 @@ def move_one(c,item):
 
 
 def read_library_page(raw, previous_timestamp):
-    if not isinstance(raw,list) or len(raw)<2:
+    if not isinstance(raw,list):
         raise ValueError('Malformed library page')
-    rows=raw[0];cursor=raw[1]
+    rows=safe_get(raw,0);cursor=safe_get(raw,1)
     if cursor is not None and not isinstance(cursor,str):raise ValueError('Malformed library cursor')
     if rows is None:rows=[]
     if not isinstance(rows,list):raise ValueError('Malformed library page')
     timestamp=safe_get(raw,2)
     return rows,cursor,previous_timestamp if timestamp is None else timestamp
+
+
+def save_checkpoint(path,scan,account,cursor,timestamp):
+    temporary=path.with_suffix('.tmp')
+    with temporary.open('w',encoding='utf-8') as out:
+        json.dump({'version':1,'scan':scan,'account':account,'cursor':cursor,'timestamp':timestamp,'complete':not bool(cursor)},out)
+        out.flush();os.fsync(out.fileno())
+    os.replace(temporary,path)
 
 
 def audit_item(c,base,index):
@@ -107,6 +116,19 @@ def stream(args,settings,db):
     index=membership(c)
     print('Album protection complete. Processing library pages incrementally.',flush=True)
     seen=set();cursors=set();cursor=timestamp=None;checked=moved=0;metadata_failures=0
+    checkpoint=directory/'checkpoint.json'
+    starting_from_checkpoint=False
+    if args.resume and checkpoint.exists():
+        saved=json.loads(checkpoint.read_text())
+        if saved.get('version')!=1 or saved.get('scan')!=scan or saved.get('account')!=c.email:
+            raise ValueError('Checkpoint identity mismatch')
+        if saved.get('complete'):
+            db.execute('update scans set state=? where id=?',('stream_complete',scan));db.commit()
+            report(db,scan,settings);print('Cleanup job already completed.',flush=True);return 0
+        cursor=saved['cursor'];timestamp=saved['timestamp']
+        if not isinstance(cursor,str) or not cursor:raise ValueError('Invalid saved cursor')
+        starting_from_checkpoint=True
+        print('Resuming after the last fully audited library page.',flush=True)
     def journal(key,state,detail=''):
         db.execute('insert into journal values(?,?,?,?,?)',(scan,key,state,time.time(),detail));db.commit()
     pending=db.execute("select key from journal where scan=? and rowid in(select max(rowid) from journal where scan=? group by key) and state in('intent','uncertain')",(scan,scan)).fetchall()
@@ -117,7 +139,21 @@ def stream(args,settings,db):
         journal(pending_key,'confirmed','Reconciled at startup without resending mutation')
     try:
         while True:
-            raw=c.rpc('lcxiM',[cursor,timestamp,100,None,1,3],parse=False)
+            request=[cursor,timestamp,100,None,1,3]
+            try:
+                raw=c.rpc('lcxiM',request,parse=False)
+            except PhotosApiError:
+                if not starting_from_checkpoint:raise
+                c=checked_client(settings,args.expect_account)
+                print('Saved cursor could not be read; safely restarting enumeration.',flush=True)
+                cursor=timestamp=None;starting_from_checkpoint=False
+                checkpoint.unlink(missing_ok=True)
+                continue
+            starting_from_checkpoint=False
+            if isinstance(raw,list) and len(raw)<2:
+                c=checked_client(settings,args.expect_account)
+                raw=c.rpc('lcxiM',request,parse=False)
+                print('Short terminal-page response rechecked with a fresh authenticated client.',flush=True)
             rows,cursor,timestamp=read_library_page(raw,timestamp)
             if not rows and cursor:
                 print('Empty library page; following the next-page cursor.',flush=True)
@@ -170,8 +206,10 @@ def stream(args,settings,db):
                 print(json.dumps({'action':'TRASH_CONFIRMED','media_key':key,'moved_this_run':moved,'charged_bytes':fresh['charged_bytes']}),flush=True)
                 if args.limit and moved>=args.limit:
                     db.execute('update scans set state=? where id=?',('paused',scan));db.commit();return 0
+            if cursor and (cursor in cursors or cursor==request[0]):raise ValueError('Repeated library cursor')
+            save_checkpoint(checkpoint,scan,c.email,cursor,timestamp)
+            print(json.dumps({'action':'PAGE_CHECKPOINT','more_pages':bool(cursor),'checked_this_run':checked,'moved_this_run':moved}),flush=True)
             if not cursor:break
-            if cursor in cursors:raise ValueError('Repeated library cursor')
             cursors.add(cursor)
         db.execute('update scans set state=? where id=?',('stream_complete',scan));db.commit()
     finally:

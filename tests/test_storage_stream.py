@@ -64,3 +64,30 @@ def test_write_mode_preserves_foreign_item_without_detail_requests(tmp_path,monk
     assert item['decision']=='other_owner'
     assert item['takes_space'] is None and item['charged_bytes'] is None
     assert db.execute('select count(*) from journal').fetchone()[0]==0
+
+
+def test_sparse_page_keeps_cursor_and_last_timestamp():
+    from gpsync.storage_stream import read_library_page
+    assert read_library_page([None,'next'],123)==([], 'next',123)
+    assert read_library_page([None,None],123)==([],None,123)
+    for malformed in [None,{},[None],['invalid','next'],[None,42]]:
+        with pytest.raises(ValueError):read_library_page(malformed,123)
+
+
+def test_empty_pages_are_followed_without_deleting_or_skipping_later_items(tmp_path,monkeypatch):
+    settings=load_settings(data_dir=tmp_path);requests=[]
+    foreign=['foreign',None,1,'dedup',0,1,None,[[27]]]
+    responses=iter([[[], 'empty-page',123],[None,'later-page'],[[foreign],None,124]])
+    def rpc(method,args,**kw):
+        if method=='EzwWhf':return []
+        assert method=='lcxiM'
+        requests.append(args)
+        return next(responses)
+    monkeypatch.setattr('gpsync.storage.checked_client',lambda *a:SimpleNamespace(email='self@example.test',rpc=rpc))
+    monkeypatch.setattr('gpsync.storage.membership',lambda *a:AlbumIndex())
+    args=SimpleNamespace(storage_command='stream',expect_account='self@example.test',write=True,limit=0,resume=None)
+    assert run(args,settings)==0
+    assert requests[2][:2]==['later-page',123]
+    db=connect(settings)
+    assert db.execute('select key from items').fetchall()==[('foreign',)]
+    assert db.execute('select count(*) from journal').fetchone()[0]==0

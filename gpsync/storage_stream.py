@@ -40,6 +40,17 @@ def move_one(c,item):
     if not in_trash(c,item['media_key'],item['dedup_key']):raise ValueError('Trash action not confirmed')
 
 
+def read_library_page(raw, previous_timestamp):
+    if not isinstance(raw,list) or len(raw)<2:
+        raise ValueError('Malformed library page')
+    rows=raw[0];cursor=raw[1]
+    if cursor is not None and not isinstance(cursor,str):raise ValueError('Malformed library cursor')
+    if rows is None:rows=[]
+    if not isinstance(rows,list):raise ValueError('Malformed library page')
+    timestamp=safe_get(raw,2)
+    return rows,cursor,previous_timestamp if timestamp is None else timestamp
+
+
 def stream(args,settings,db):
     from gpsync.storage import checked_client,membership,enrich,crosscheck,owned,quota,report
     if args.limit<0:raise ValueError('Limit cannot be negative')
@@ -62,9 +73,9 @@ def stream(args,settings,db):
     try:
         while True:
             raw=c.rpc('lcxiM',[cursor,timestamp,100,None,1,3],parse=False)
-            rows=safe_get(raw,0)
-            if not isinstance(rows,list):raise ValueError('Malformed library page')
-            cursor=safe_get(raw,1);timestamp=safe_get(raw,2)
+            rows,cursor,timestamp=read_library_page(raw,timestamp)
+            if not rows and cursor:
+                print('Empty library page; following the next-page cursor.',flush=True)
             groups={}
             for row in rows:
                 dedup=safe_get(row,3)

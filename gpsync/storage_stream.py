@@ -2,7 +2,7 @@
 import json
 import time
 import uuid
-from gpsync.client import _extract_wrb_payload
+from gpsync.client import _extract_wrb_payload, PhotosApiError
 from gpsync.parser import MediaItem
 from gpsync.util import safe_get
 
@@ -51,6 +51,45 @@ def read_library_page(raw, previous_timestamp):
     return rows,cursor,previous_timestamp if timestamp is None else timestamp
 
 
+def audit_item(c,base,index):
+    from gpsync.storage import enrich,crosscheck
+    key=base['media_key']
+    item=enrich(base,c.rpc('fDcn4b',[key,1,None,None,1],parse=False),index)
+    return crosscheck(item,c.rpc('VrseUb',[key,None,None,None,None],parse=False))
+
+
+def audit_with_recovery(c,base,index,settings,email):
+    from gpsync.storage import checked_client
+    try:return audit_item(c,base,index),c
+    except PhotosApiError:
+        fresh=checked_client(settings,email)
+        # A working account-bound library read distinguishes one unreadable item from lost global access.
+        read_library_page(fresh.rpc('lcxiM',[None,None,1,None,1,3],parse=False),None)
+        try:return audit_item(fresh,base,index),fresh
+        except PhotosApiError:
+            return {**base,'decision':'metadata_unavailable','takes_space':None,'charged_bytes':None,
+                'quality_code':None,'albums':sorted(index.get(base['media_key'],set())),
+                'checked_at':time.time(),'provenance':'Metadata unavailable after fresh account and library verification; preserved'},fresh
+
+
+def move_with_reconciliation(c,item,settings,email,journal):
+    from gpsync.storage import checked_client
+    try:move_one(c,item)
+    except Exception as error:
+        journal(item['media_key'],'uncertain',type(error).__name__)
+        fresh=checked_client(settings,email)
+        for delay in (0,2,5):
+            if delay:time.sleep(delay)
+            try:
+                if in_trash(fresh,item['media_key'],item['dedup_key']):
+                    print('Timed-out/unconfirmed Trash request reconciled through read-only Trash lookup.',flush=True)
+                    return fresh
+            except PhotosApiError:
+                if delay==5:raise
+        raise RuntimeError('Trash action remains uncertain; no mutation was retried') from error
+    return c
+
+
 def stream(args,settings,db):
     from gpsync.storage import checked_client,membership,enrich,crosscheck,owned,quota,report
     if args.limit<0:raise ValueError('Limit cannot be negative')
@@ -67,9 +106,15 @@ def stream(args,settings,db):
     (directory/'quota-before.json').write_text(json.dumps(quota(c)))
     index=membership(c)
     print('Album protection complete. Processing library pages incrementally.',flush=True)
-    seen=set();cursors=set();cursor=timestamp=None;checked=moved=0
+    seen=set();cursors=set();cursor=timestamp=None;checked=moved=0;metadata_failures=0
     def journal(key,state,detail=''):
         db.execute('insert into journal values(?,?,?,?,?)',(scan,key,state,time.time(),detail));db.commit()
+    pending=db.execute("select key from journal where scan=? and rowid in(select max(rowid) from journal where scan=? group by key) and state in('intent','uncertain')",(scan,scan)).fetchall()
+    for (pending_key,) in pending:
+        saved=db.execute('select payload from items where scan=? and key=?',(scan,pending_key)).fetchone()
+        if not saved or not in_trash(c,pending_key,json.loads(saved[0])['dedup_key']):
+            raise ValueError('Unresolved prior mutation; no further writes allowed')
+        journal(pending_key,'confirmed','Reconciled at startup without resending mutation')
     try:
         while True:
             raw=c.rpc('lcxiM',[cursor,timestamp,100,None,1,3],parse=False)
@@ -94,33 +139,33 @@ def stream(args,settings,db):
                 base=dict(media_key=key,dedup_key=parsed.dedup_key,is_owned=owned(row),created_ts=parsed.creation_timestamp,
                     archived=parsed.is_archived,is_video=parsed.video_duration is not None,is_live_photo=parsed.is_live_photo,
                     partial_upload=safe_get(row,12,0)==20)
-                if args.write and base['is_owned'] is not True:
+                album_protected=key in index or base['dedup_key'] in index.protected_dedup
+                if args.write and (base['is_owned'] is not True or album_protected):
                     item={**base, 'takes_space':None, 'charged_bytes':None, 'quality_code':None,
                         'albums':sorted(index.get(key,set())),
-                        'decision':'other_owner' if base['is_owned'] is False else 'unknown_owner',
-                        'provenance':'lcxiM ownership flags; remaining metadata not requested for protected write-mode item'}
+                        'decision':('other_owner' if base['is_owned'] is False else 'unknown_owner') if base['is_owned'] is not True else 'album_protected',
+                        'provenance':'lcxiM ownership flags; and complete album index; remaining metadata not requested for protected write-mode item'}
                     db.execute('insert or replace into items values(?,?,?)',(scan,key,json.dumps(item)));db.commit();checked+=1
                     print(json.dumps({'checked':checked,'media_key':key,'owned':base['is_owned'],
                         'decision':item['decision'],'action':'PRESERVED_WITHOUT_DETAIL_REQUESTS'}),flush=True)
                     continue
-                item=enrich(base,c.rpc('fDcn4b',[key,1,None,None,1],parse=False),index)
-                item=crosscheck(item,c.rpc('VrseUb',[key,None,None,None,None],parse=False))
+                item,c=audit_with_recovery(c,base,index,settings,args.expect_account)
+                metadata_failures=metadata_failures+1 if item['decision']=='metadata_unavailable' else 0
                 db.execute('insert or replace into items values(?,?,?)',(scan,key,json.dumps(item)));db.commit();checked+=1
                 print(json.dumps({'checked':checked,'media_key':key,'owned':item['is_owned'],'counts_storage':item['takes_space'],
-                    'independent_storage_check':item['secondary_storage_flag'],'charged_bytes':item['charged_bytes'],
+                    'independent_storage_check':item.get('secondary_storage_flag'),'charged_bytes':item['charged_bytes'],
                     'albums':len(item['albums']),'decision':item['decision']}),flush=True)
+                if metadata_failures>=5:raise PhotosApiError('Five consecutive item metadata failures despite valid account; stopped for diagnosis')
                 if not args.write or not qualifies(item,index):continue
                 # A mutation key must identify one current page record; all album aliases are protected globally.
                 if len(groups.get(item['dedup_key'],[]))!=1:
                     journal(key,'skipped','Ambiguous mutation identity');continue
                 # Refresh metadata immediately before the write, after recording the initial proof.
-                fresh=enrich(base,c.rpc('fDcn4b',[key,1,None,None,1],parse=False),index)
-                fresh=crosscheck(fresh,c.rpc('VrseUb',[key,None,None,None,None],parse=False))
+                fresh,c=audit_with_recovery(c,base,index,settings,args.expect_account)
                 if not qualifies(fresh,index) or fresh['dedup_key']!=item['dedup_key']:
                     journal(key,'skipped','Fresh metadata no longer qualifies');continue
                 journal(key,'intent')
-                try:move_one(c,fresh)
-                except Exception as error:journal(key,'uncertain',type(error).__name__);raise
+                c=move_with_reconciliation(c,fresh,settings,args.expect_account,journal)
                 journal(key,'confirmed');moved+=1
                 print(json.dumps({'action':'TRASH_CONFIRMED','media_key':key,'moved_this_run':moved,'charged_bytes':fresh['charged_bytes']}),flush=True)
                 if args.limit and moved>=args.limit:
